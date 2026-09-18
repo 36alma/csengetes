@@ -217,8 +217,11 @@ def play_media():
     force = bool(body.get("force", False))
     if not filename:
         return jsonify({"error": "Fajlnev kotelezo."}), 400
-    filepath = os.path.join(MEDIA_DIR, filename)
-    if not os.path.isfile(filepath):
+    safe_name = secure_filename(filename)
+    media_dir = os.path.realpath(MEDIA_DIR)
+    filepath = os.path.realpath(os.path.join(media_dir, safe_name))
+    is_contained = filepath == media_dir or filepath.startswith(media_dir + os.sep)
+    if not safe_name or not is_contained or not os.path.isfile(filepath):
         return jsonify({"error": f"A fajl nem talalhato: {filename}"}), 404
     logger.info("Lejatszas inditva (%s), force=%s", filename, force)
     try:
