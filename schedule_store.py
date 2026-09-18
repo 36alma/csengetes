@@ -27,8 +27,18 @@ def list_schedules() -> list[str]:
     return sorted(f for f in os.listdir(SCHEDULES_DIR) if f.endswith(".json"))
 
 
+def _resolve_path(filename: str) -> str:
+    if os.path.isabs(filename):
+        raise ScheduleError(f"Ervenytelen fajlnev: {filename!r}")
+    base = os.path.realpath(SCHEDULES_DIR)
+    path = os.path.realpath(os.path.join(base, filename))
+    if path != base and not path.startswith(base + os.sep):
+        raise ScheduleError(f"Ervenytelen fajlnev: {filename!r}")
+    return path
+
+
 def load(filename: str) -> dict:
-    path = os.path.join(SCHEDULES_DIR, filename)
+    path = _resolve_path(filename)
     with open(path, "r", encoding="utf-8") as fh:
         data = json.load(fh)
     validate(data)
@@ -38,7 +48,7 @@ def load(filename: str) -> dict:
 def save(filename: str, data: dict) -> None:
     validate(data)
     _ensure_dir()
-    path = os.path.join(SCHEDULES_DIR, filename)
+    path = _resolve_path(filename)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(data, fh, ensure_ascii=False, indent=2)
     logger.info("Csengetesi rend mentve: %s", filename)
