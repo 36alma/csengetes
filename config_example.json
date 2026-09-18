@@ -1,0 +1,9 @@
+{
+  "time_mode": "ntp",
+  "active_schedule": "rovid.json",
+  "volume_percent": 90.0,
+  "device_index": null,
+  "default_media_file": "school_bell_sound_effect.mp3",
+  "ntp_server": "pool.ntp.org",
+  "max_upload_mb": 20.0
+}
