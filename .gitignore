@@ -1,0 +1,106 @@
+# Developer Backup .gitignore
+# Never commit sensitive credentials to version control!
+
+# === SECURITY - NEVER COMMIT THESE ===
+02-credentials/
+*.key
+*.pem
+*.ppk
+id_rsa*
+*.p12
+*.pfx
+*password*
+*secret*
+*token*
+*api-key*
+.env
+.env.*
+
+# === PERSONAL DATA ===
+*personal*
+*private*
+*confidential*
+
+# === SYSTEM FILES ===
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# === TEMPORARY FILES ===
+*.tmp
+*.temp
+*.log
+*.bak
+*.swp
+*.swo
+*~
+.goutputstream-*
+
+# === COMPRESSED ARCHIVES ===
+*.zip
+*.rar
+*.7z
+*.tar.gz
+*.tgz
+
+# === IDE AND EDITOR FILES ===
+.vscode/
+.idea/
+*.sublime-*
+*.code-workspace
+
+# === NODE.JS ===
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# === PYTHON ===
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+
+# === JAVA ===
+*.class
+*.jar
+*.war
+*.ear
+
+# === DATABASE DUMPS (if they contain sensitive data) ===
+*.sql
+*.db
+*.sqlite
+*.sqlite3
+
+# === LARGE BINARIES ===
+*.exe
+*.msi
+*.deb
+*.rpm
+*.dmg
+*.iso
+
+# === CACHE DIRECTORIES ===
+.cache/
+cache/
+tmp/
+temp/
+
+# === MIGRATION LOGS ===
+migration.log
+
+
+media/*
+schedules/*
+docs/*
+config.json
