@@ -1,0 +1,7 @@
+sounddevice
+pydub
+ntplib
+numpy
+flask
+pywebview
+audioop-lts; python_version >= "3.13"
