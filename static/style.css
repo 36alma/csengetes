@@ -191,7 +191,12 @@ html, body {
 
 .table-card {
   flex-grow: 1;
-  overflow: hidden;
+  min-height: 220px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scroll-padding-top: 42px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--panel-bg);
@@ -199,8 +204,11 @@ html, body {
   flex-direction: column;
 }
 
-.table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.table { width: 100%; flex-shrink: 0; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 14px; }
 .table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   text-align: left;
   padding: 13px 18px;
   font-size: 11px;
@@ -211,17 +219,16 @@ html, body {
   background: var(--header-bg);
   border-bottom: 1px solid var(--border);
 }
-.table tbody { display: block; overflow-y: auto; max-height: 100%; }
-.table thead, .table tbody tr { display: table; width: 100%; table-layout: fixed; }
-
 .table tbody tr {
   cursor: pointer;
   transition: background 120ms ease;
 }
 .table tbody tr:hover { background: rgba(255, 255, 255, 0.045); }
 .table tbody tr.alt { background: var(--row-alt); }
-.table tbody tr.selected { background: var(--row-selected); box-shadow: inset 3px 0 0 var(--accent); }
-.table tbody tr.editing { background: var(--row-editing); box-shadow: inset 3px 0 0 var(--warning); }
+.table tbody tr.selected { background: var(--row-selected); }
+.table tbody tr.selected td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.table tbody tr.editing { background: var(--row-editing); }
+.table tbody tr.editing td:first-child { box-shadow: inset 3px 0 0 var(--warning); }
 
 .table td {
   padding: 12px 18px;
@@ -382,6 +389,12 @@ html, body {
 
 .alert-title { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
 .alert-detail { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; white-space: pre-wrap; }
+
+.modal-overlay { z-index: 60; }
+.modal-box { max-width: calc(100vw - 32px); }
+.modal-input { width: 100%; box-sizing: border-box; margin-bottom: 16px; }
+.modal-actions { display: flex; gap: 10px; justify-content: center; }
+.modal-box .alert-detail:empty { display: none; }
 
 @media (max-width: 720px) {
   .content { padding: 16px; }

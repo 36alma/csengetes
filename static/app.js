@@ -64,12 +64,79 @@ document.getElementById("alertOk").addEventListener("click", () => {
   if (alertTimer) clearTimeout(alertTimer);
 });
 
+// ---------- modal (alert/confirm/prompt csere) ----------
+
+const modal = (() => {
+  const overlay = document.getElementById("modalOverlay");
+  const titleEl = document.getElementById("modalTitle");
+  const messageEl = document.getElementById("modalMessage");
+  const inputEl = document.getElementById("modalInput");
+  const okBtn = document.getElementById("modalOk");
+  const cancelBtn = document.getElementById("modalCancel");
+  let queue = Promise.resolve();
+
+  function open({ title, message, input, okText, cancelText, danger, cancelable }) {
+    return new Promise((resolve) => {
+      titleEl.textContent = title;
+      titleEl.style.color = danger ? "var(--danger-text)" : "";
+      messageEl.textContent = message || "";
+      inputEl.style.display = input ? "" : "none";
+      inputEl.value = "";
+      inputEl.placeholder = input && input.placeholder ? input.placeholder : "";
+      okBtn.textContent = okText;
+      okBtn.className = "btn " + (danger ? "btn-danger-solid" : "btn-primary");
+      cancelBtn.textContent = cancelText || "Mégse";
+      cancelBtn.style.display = cancelable ? "" : "none";
+      overlay.classList.add("visible");
+      (input ? inputEl : okBtn).focus();
+
+      function close(value) {
+        overlay.classList.remove("visible");
+        okBtn.removeEventListener("click", onOk);
+        cancelBtn.removeEventListener("click", onCancel);
+        overlay.removeEventListener("mousedown", onBackdrop);
+        document.removeEventListener("keydown", onKey, true);
+        resolve(value);
+      }
+      const onOk = () => close(input ? inputEl.value : true);
+      const onCancel = () => close(input ? null : false);
+      const onBackdrop = (e) => { if (e.target === overlay && cancelable) onCancel(); };
+      const onKey = (e) => {
+        if (e.key === "Escape") { e.preventDefault(); (cancelable ? onCancel : onOk)(); }
+        else if (e.key === "Enter") { e.preventDefault(); onOk(); }
+      };
+      okBtn.addEventListener("click", onOk);
+      cancelBtn.addEventListener("click", onCancel);
+      overlay.addEventListener("mousedown", onBackdrop);
+      document.addEventListener("keydown", onKey, true);
+    });
+  }
+
+  // egyszerre csak egy modal latszik, a tobbi sorba all
+  function enqueue(opts) {
+    const p = queue.then(() => open(opts));
+    queue = p.catch(() => {});
+    return p;
+  }
+
+  return {
+    alert: (message, { title = "Értesítés", danger = false } = {}) =>
+      enqueue({ title, message, okText: "OK", danger, cancelable: false }),
+    confirm: (message, { title = "Megerősítés", okText = "Igen", danger = false } = {}) =>
+      enqueue({ title, message, okText, danger, cancelable: true }),
+    prompt: (message, { title = "Adatbevitel", placeholder = "" } = {}) =>
+      enqueue({ title, message, input: { placeholder }, okText: "OK", cancelable: true }),
+  };
+})();
+
+const showError = (message) => modal.alert(message, { title: "Hiba", danger: true });
+
 async function playAndAlert(filename, force) {
   const result = await post("/api/media/play", { filename, force });
   if (result && result.ok) {
-    showAlert("Lejatszas sikeres", filename, true);
+    showAlert("Lejátszás sikeres", filename, true);
   } else {
-    showAlert("Hiba a lejatszasban", `${filename}\n${result ? result.error : "Ismeretlen hiba"}`, false);
+    showAlert("Hiba a lejátszásban", `${filename}\n${result ? result.error : "Ismeretlen hiba"}`, false);
   }
 }
 
@@ -106,12 +173,12 @@ async function loadSchedulesList() {
 async function loadScheduleEvents(name) {
   const data = await get("/api/schedules/" + encodeURIComponent(name));
   if (data.error) {
-    alert(data.error);
+    await showError(data.error);
     return;
   }
   currentScheduleData = data;
   await post("/api/schedules/" + encodeURIComponent(name) + "/activate", {});
-  renderEventsTable();
+  renderEventsTable({ resetScroll: true });
 }
 
 function sortedEvents() {
@@ -120,8 +187,10 @@ function sortedEvents() {
   );
 }
 
-function renderEventsTable() {
+function renderEventsTable({ resetScroll = false } = {}) {
   const tbody = document.getElementById("eventsTbody");
+  const scroller = tbody.closest(".table-card");
+  const scrollTop = resetScroll ? 0 : scroller.scrollTop;
   tbody.innerHTML = "";
   if (!currentScheduleData) return;
   const events = sortedEvents();
@@ -140,6 +209,7 @@ function renderEventsTable() {
     tr.addEventListener("dblclick", () => startEditEvent(ev));
     tbody.appendChild(tr);
   });
+  scroller.scrollTop = scrollTop;
 }
 
 function handleRowClick(e, index, key) {
@@ -162,35 +232,35 @@ function startEditEvent(ev) {
   editingOriginal = { ...ev };
   document.getElementById("eventTime").value = ev.time;
   document.getElementById("eventFile").value = ev.file;
-  document.getElementById("btnAddEvent").textContent = "Modositas mentese";
+  document.getElementById("btnAddEvent").textContent = "Módosítás mentése";
   document.getElementById("btnCancelEdit").style.display = "inline-flex";
-  document.getElementById("editHint").textContent = `Szerkesztes: ${ev.time} → ${ev.file}`;
+  document.getElementById("editHint").textContent = `Szerkesztés: ${ev.time} → ${ev.file}`;
 }
 
 function cancelEdit() {
   editingOriginal = null;
   document.getElementById("eventTime").value = "";
   document.getElementById("eventFile").value = defaultMediaFile;
-  document.getElementById("btnAddEvent").textContent = "Esemeny hozzaadas";
+  document.getElementById("btnAddEvent").textContent = "Esemény hozzáadás";
   document.getElementById("btnCancelEdit").style.display = "none";
   document.getElementById("editHint").textContent = "";
 }
 
 document.getElementById("btnCancelEdit").addEventListener("click", cancelEdit);
 
-document.getElementById("btnAddEvent").addEventListener("click", () => {
+document.getElementById("btnAddEvent").addEventListener("click", async () => {
   if (!currentScheduleData) {
-    alert("Eloszor valassz ki egy rendet.");
+    await showError("Először válassz ki egy rendet.");
     return;
   }
   const time = document.getElementById("eventTime").value.trim();
   const file = document.getElementById("eventFile").value.trim();
   if (!time || !file) {
-    alert("Add meg az idopontot es a fajlt.");
+    await showError("Add meg az időpontot és a fájlt.");
     return;
   }
   if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(time)) {
-    alert("Ervenytelen idopont formatum (HH:MM varva).");
+    await showError("Érvénytelen időpont formátum (HH:MM várva).");
     return;
   }
 
@@ -205,21 +275,22 @@ document.getElementById("btnAddEvent").addEventListener("click", () => {
   selectedRowKeys = new Set([eventKey({ time, file })]);
   cancelEdit();
   renderEventsTable();
+  document.querySelector("#eventsTbody tr.selected")?.scrollIntoView({ block: "nearest" });
 });
 
-document.getElementById("btnRemoveEvent").addEventListener("click", () => {
+document.getElementById("btnRemoveEvent").addEventListener("click", async () => {
   if (!currentScheduleData || selectedRowKeys.size === 0) return;
   const count = selectedRowKeys.size;
-  if (count > 1 && !confirm(`Biztosan torlod a kijelolt ${count} esemenyt?`)) return;
+  if (count > 1 && !(await modal.confirm(`Biztosan törlöd a kijelölt ${count} eseményt?`, { title: "Törlés", okText: "Törlés", danger: true }))) return;
   currentScheduleData.events = currentScheduleData.events.filter((e) => !selectedRowKeys.has(eventKey(e)));
   selectedRowKeys = new Set();
   selectionAnchorIndex = null;
   renderEventsTable();
 });
 
-document.getElementById("btnRemoveAllEvents").addEventListener("click", () => {
+document.getElementById("btnRemoveAllEvents").addEventListener("click", async () => {
   if (!currentScheduleData || currentScheduleData.events.length === 0) return;
-  if (!confirm(`Biztosan torlod MIND a(z) ${currentScheduleData.events.length} esemenyt ebbol a rendbol?`)) return;
+  if (!(await modal.confirm(`Biztosan törlöd MIND a(z) ${currentScheduleData.events.length} eseményt ebből a rendből?`, { title: "Összes törlése", okText: "Összes törlése", danger: true }))) return;
   currentScheduleData.events = [];
   selectedRowKeys = new Set();
   selectionAnchorIndex = null;
@@ -231,16 +302,16 @@ document.getElementById("btnSaveSchedule").addEventListener("click", async () =>
   const name = document.getElementById("scheduleSelect").value;
   const result = await post("/api/schedules/" + encodeURIComponent(name), currentScheduleData);
   if (result && result.error) {
-    alert(result.error);
+    await showError(result.error);
     return;
   }
-  alert(`${name} elmentve.`);
+  await modal.alert(`${name} elmentve.`, { title: "Mentés sikeres" });
 });
 
-document.getElementById("btnRingNow").addEventListener("click", () => {
+document.getElementById("btnRingNow").addEventListener("click", async () => {
   const filename = document.getElementById("eventFile").value.trim() || defaultMediaFile;
   if (!filename) {
-    alert("Nincs kivalasztott vagy alapertelmezett hangfajl.");
+    await showError("Nincs kiválasztott vagy alapértelmezett hangfájl.");
     return;
   }
   playAndAlert(filename, true);
@@ -255,11 +326,11 @@ document.getElementById("scheduleSelect").addEventListener("change", (e) => {
 document.getElementById("btnRefreshSchedules").addEventListener("click", loadSchedulesList);
 
 document.getElementById("btnNewSchedule").addEventListener("click", async () => {
-  const name = prompt("Fajlnev (pl. rovid.json):");
+  const name = await modal.prompt("Fájlnév (pl. rovid.json):", { title: "Új rend", placeholder: "rovid.json" });
   if (!name) return;
   const result = await post("/api/schedules", { name });
   if (result && result.error) {
-    alert(result.error);
+    await showError(result.error);
     return;
   }
   await loadSchedulesList();
@@ -319,17 +390,17 @@ document.getElementById("fileInput").addEventListener("change", async (e) => {
   const res = await fetch("/api/media/upload", { method: "POST", body: formData });
   const result = await res.json();
   if (result.error) {
-    alert(result.error);
+    await showError(result.error);
   } else {
     await loadMediaList();
   }
   e.target.value = "";
 });
 
-document.getElementById("btnPlaySelected").addEventListener("click", () => {
+document.getElementById("btnPlaySelected").addEventListener("click", async () => {
   const listbox = document.getElementById("mediaListbox");
   if (!listbox.value) {
-    alert("Valassz ki egy fajlt a listabol.");
+    await showError("Válassz ki egy fájlt a listából.");
     return;
   }
   const force = document.getElementById("forcePlay").checked;
@@ -339,18 +410,18 @@ document.getElementById("btnPlaySelected").addEventListener("click", () => {
 document.getElementById("btnSaveDefaultMedia").addEventListener("click", async () => {
   const filename = document.getElementById("defaultMediaSelect").value;
   if (!filename) {
-    alert("Valassz ki egy fajlt az alapertelmezetthez.");
+    await showError("Válassz ki egy fájlt az alapértelmezetthez.");
     return;
   }
   const result = await post("/api/media/default", { filename });
   if (result && result.error) {
-    alert(result.error);
+    await showError(result.error);
     return;
   }
   defaultMediaFile = filename;
   const eventFile = document.getElementById("eventFile");
   if (!eventFile.value) eventFile.value = filename;
-  alert(`Alapertelmezett csengohang: ${filename}`);
+  await modal.alert(filename, { title: "Alapértelmezett csengőhang mentve" });
 });
 
 async function loadUploadLimit() {
@@ -362,10 +433,10 @@ document.getElementById("btnSaveUploadLimit").addEventListener("click", async ()
   const mb = Number(document.getElementById("uploadLimitInput").value);
   const result = await post("/api/media/upload-limit", { max_upload_mb: mb });
   if (result && result.error) {
-    alert(result.error);
+    await showError(result.error);
     return;
   }
-  alert(`Max. feltoltheto fajlmeret: ${result.max_upload_mb} MB`);
+  await modal.alert(`Max. feltölthető fájlméret: ${result.max_upload_mb} MB`, { title: "Mentés sikeres" });
 });
 
 // ---------- Ido ful ----------
@@ -375,7 +446,7 @@ async function loadTimeState() {
   document.getElementById("modeNtp").checked = data.mode === "ntp";
   document.getElementById("modeManual").checked = data.mode === "manual";
   document.getElementById("ntpServer").value = data.ntp_server;
-  document.getElementById("currentTime").textContent = "Aktualis szamitott ido: " + data.now;
+  document.getElementById("currentTime").textContent = "Aktuális számított idő: " + data.now;
 }
 
 document.querySelectorAll('input[name="timeMode"]').forEach((radio) => {
@@ -388,7 +459,7 @@ document.getElementById("btnSyncNtp").addEventListener("click", async () => {
   const server = document.getElementById("ntpServer").value.trim();
   const result = await post("/api/time/sync", { ntp_server: server });
   if (!result || !result.ok) {
-    alert("NTP hiba: " + (result ? result.error : "ismeretlen hiba") + "\nRendszerora kerul hasznalatra.");
+    await showError("NTP hiba: " + (result ? result.error : "ismeretlen hiba") + "\nRendszeróra kerül használatra.");
   }
 });
 
@@ -396,7 +467,7 @@ document.getElementById("btnApplyManual").addEventListener("click", async () => 
   const value = document.getElementById("manualTime").value.trim();
   const result = await post("/api/time/manual", { value });
   if (result && result.error) {
-    alert(result.error);
+    await showError(result.error);
     return;
   }
   document.getElementById("modeManual").checked = true;
@@ -404,7 +475,7 @@ document.getElementById("btnApplyManual").addEventListener("click", async () => 
 
 setInterval(() => {
   get("/api/time").then((data) => {
-    document.getElementById("currentTime").textContent = "Aktualis szamitott ido: " + data.now;
+    document.getElementById("currentTime").textContent = "Aktuális számított idő: " + data.now;
   });
 }, 1000);
 
@@ -420,7 +491,7 @@ async function loadOutputState() {
 
   const defaultOpt = document.createElement("option");
   defaultOpt.value = "default";
-  defaultOpt.textContent = "Rendszer alapertelmezett";
+  defaultOpt.textContent = "Rendszer alapértelmezett";
   select.appendChild(defaultOpt);
   deviceMap["default"] = null;
 
@@ -456,7 +527,7 @@ document.getElementById("deviceSelect").addEventListener("change", async (e) => 
 function updateVolumeLabel(value) {
   const rounded = Math.round(value);
   const suffix = rounded > 100 ? " (Boost)" : "";
-  document.getElementById("volumeLabel").textContent = `Hangero: ${rounded}%${suffix}`;
+  document.getElementById("volumeLabel").textContent = `Hangerő: ${rounded}%${suffix}`;
 }
 
 let volumeDebounce = null;
