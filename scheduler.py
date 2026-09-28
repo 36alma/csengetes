@@ -19,13 +19,14 @@ class Scheduler:
         self._active_schedule: dict | None = None
         self._running = False
         self._thread: threading.Thread | None = None
-        self._last_fired_key: str | None = None  # "HH:MM" - az utoljara inditott esemeny kulcsa
+        self._last_fired_key: str | None = None  # "YYYY-MM-DD HH:MM" - az utoljara inditott esemeny kulcsa
         self._lock = threading.Lock()
 
     def set_active_schedule(self, schedule: dict | None) -> None:
         with self._lock:
+            # a _last_fired_key szandekosan nem nullazodik: ugyanabban a percben
+            # a rend ujramentese/aktivalasa ne csengessen ujra
             self._active_schedule = schedule
-            self._last_fired_key = None
 
     def start(self) -> None:
         if self._running:
@@ -55,19 +56,20 @@ class Scheduler:
 
         now = self._time_source.get_now()
         current_key = now.strftime("%H:%M")
+        fired_key = now.strftime("%Y-%m-%d %H:%M")
 
         with self._lock:
-            if current_key == self._last_fired_key:
+            if fired_key == self._last_fired_key:
                 return
 
         for event in schedule.get("events", []):
             if event["time"] == current_key:
                 with self._lock:
-                    self._last_fired_key = current_key
+                    self._last_fired_key = fired_key
                 filepath = os.path.join(MEDIA_DIR, event["file"])
                 if not os.path.isfile(filepath):
                     logger.error("Hianyzo mediafajl az utemezett esemenyhez: %s", filepath)
                     return
                 logger.info("Utemezett csengetes inditasa: %s -> %s", current_key, event["file"])
-                self._audio_player.play(filepath)
+                self._audio_player.play(filepath, force=True)
                 return

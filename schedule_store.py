@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import re
-
+from model import Event, Rend, TimeModel
 logger = logging.getLogger("csengetes")
 
 SCHEDULES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schedules")
@@ -43,6 +43,14 @@ def load(filename: str) -> dict:
         data = json.load(fh)
     validate(data)
     return data
+
+def load_obj(filename:str) -> Rend:
+    raw_data = load(filename)
+    events:list[Event] = []
+    for i in raw_data["events"]:
+        hour, minute = map(int,str(i["time"]).split(":"))
+        events.append(Event(file=i["file"],time=TimeModel(hours=hour,minute=minute)))
+    return Rend(name=raw_data["name"],events=events)
 
 
 def save(filename: str, data: dict) -> None:
