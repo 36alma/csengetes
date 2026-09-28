@@ -105,3 +105,4 @@ schedules/*
 docs/*
 config.json
 download/*
+*.bat
