@@ -550,6 +550,118 @@ async function loadLogs() {
 
 setInterval(loadLogs, 2000);
 
+// ---------- zene (YouTube) ----------
+
+const MUSIC_STATUS_TEXT = {
+  idle: "Nincs aktív zene",
+  pending: "Indul...",
+  downloading: "Letöltés...",
+  playing: "Lejátszás folyamatban",
+  skipped: "Kihagyva: nem fér bele a következő csengetésig",
+  done: "Lejátszás kész",
+  stopped: "Leállítva",
+  error: "Hiba",
+};
+
+async function loadMusicList() {
+  const data = await get("/api/music");
+  const box = document.getElementById("musicListbox");
+  const selected = box.value;
+  box.innerHTML = "";
+  for (const name of (data && data.files) || []) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    box.appendChild(opt);
+  }
+  if (selected) box.value = selected;
+  markCurrentMusic();
+}
+
+let currentMusic = null;
+
+function markCurrentMusic() {
+  for (const opt of document.getElementById("musicListbox").options) {
+    const playing = opt.value === currentMusic;
+    opt.classList.toggle("now-playing", playing);
+    opt.textContent = (playing ? "▶ " : "") + opt.value;
+  }
+}
+
+let lastMusicStatus = null;
+
+async function loadMusicStatus() {
+  const data = await get("/api/music/status");
+  if (!data) return;
+  let text = MUSIC_STATUS_TEXT[data.status] || data.status;
+  if (data.error) text += ": " + data.error;
+  currentMusic = data.status === "playing" ? data.current : null;
+  if (currentMusic) text += " – " + currentMusic;
+  markCurrentMusic();
+  document.getElementById("musicStatus").textContent = "Állapot: " + text;
+  // letoltes utan frissitjuk a listat
+  if (lastMusicStatus === "downloading" && data.status !== "downloading") loadMusicList();
+  lastMusicStatus = data.status;
+}
+
+async function startMusic(path, body, label) {
+  const result = await post(path, {
+    ...body,
+    force: document.getElementById("musicForce").checked,
+    now_play: document.getElementById("musicNowPlay").checked,
+  });
+  if (result && result.error) {
+    await showError(result.error);
+    return;
+  }
+  showAlert("Zene elindítva", label, true);
+  loadMusicStatus();
+}
+
+document.getElementById("btnMusicPlay").addEventListener("click", async () => {
+  const url = document.getElementById("musicUrl").value.trim();
+  if (!url) {
+    await showError("Adj meg egy YouTube linket.");
+    return;
+  }
+  await startMusic("/api/music/play", { urls: [url] }, url);
+});
+
+document.getElementById("btnMusicPlayFile").addEventListener("click", async () => {
+  const name = document.getElementById("musicListbox").value;
+  if (!name) {
+    await showError("Válassz ki egy fájlt a listából.");
+    return;
+  }
+  await startMusic("/api/music/play-file", { filenames: [name] }, name);
+});
+
+document.getElementById("btnMusicStop").addEventListener("click", async () => {
+  await post("/api/music/stop");
+  loadMusicStatus();
+});
+
+document.getElementById("btnMusicDelete").addEventListener("click", async () => {
+  const name = document.getElementById("musicListbox").value;
+  if (!name) {
+    await showError("Válassz ki egy fájlt a listából.");
+    return;
+  }
+  if (!(await modal.confirm(name, { title: "Fájl törlése", okText: "Törlés", danger: true }))) return;
+  const result = await api("/api/music/" + encodeURIComponent(name), { method: "DELETE" });
+  if (result && result.error) {
+    await showError(result.error);
+    return;
+  }
+  await loadMusicList();
+});
+
+document.getElementById("btnMusicRefresh").addEventListener("click", loadMusicList);
+
+setInterval(() => {
+  if (document.getElementById("panel-music").classList.contains("active")) loadMusicStatus();
+}, 2000);
+
 // ---------- inicializalas ----------
 
 async function init() {
@@ -558,6 +670,8 @@ async function init() {
   await loadTimeState();
   await loadOutputState();
   await loadUploadLimit();
+  await loadMusicList();
+  await loadMusicStatus();
   await loadLogs();
   cancelEdit();
 }

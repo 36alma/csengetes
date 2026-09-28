@@ -23,6 +23,7 @@
   <div class="tabs" role="tablist">
     <button class="tab active" data-tab="schedule">Csengetési rend</button>
     <button class="tab" data-tab="media">Média</button>
+    <button class="tab" data-tab="music">Zene</button>
     <button class="tab" data-tab="time">Idő</button>
     <button class="tab" data-tab="output">Kimenet</button>
     <button class="tab" data-tab="log">Napló</button>
@@ -117,6 +118,48 @@
           <input class="input" id="uploadLimitInput" type="number" min="1" max="1024" step="1" style="width:100px">
           <button class="btn btn-ghost" id="btnSaveUploadLimit">Mentés</button>
         </div>
+      </div>
+    </section>
+
+    <!-- Zene -->
+    <section class="panel" id="panel-music">
+      <div class="form-card">
+        <div class="form-row">
+          <span class="field-label bold">YouTube link</span>
+          <input class="input" id="musicUrl" type="text" placeholder="https://www.youtube.com/watch?v=..." style="flex:1; min-width:280px">
+          <button class="btn btn-primary" id="btnMusicPlay">Letöltés és lejátszás</button>
+        </div>
+        <div class="form-row">
+          <label class="switch-row">
+            <span class="switch">
+              <input type="checkbox" id="musicForce">
+              <span class="switch-slider"></span>
+            </span>
+            <span class="switch-label">Akkor is induljon, ha nem fér bele a szünetbe</span>
+          </label>
+          <label class="switch-row">
+            <span class="switch">
+              <input type="checkbox" id="musicNowPlay">
+              <span class="switch-slider"></span>
+            </span>
+            <span class="switch-label">Megszakítja a most szóló hangot</span>
+          </label>
+        </div>
+        <div class="current-time" id="musicStatus">Állapot: -</div>
+      </div>
+
+      <div class="toolbar">
+        <button class="btn btn-ghost" id="btnMusicRefresh">Lista frissítése</button>
+        <button class="btn btn-ghost" id="btnMusicStop">Leállítás</button>
+      </div>
+
+      <div class="table-card list-card">
+        <select class="listbox" id="musicListbox" size="10"></select>
+      </div>
+
+      <div class="media-bottom">
+        <button class="btn btn-ghost" id="btnMusicPlayFile">Kijelölt lejátszása</button>
+        <button class="btn btn-danger" id="btnMusicDelete">Kijelölt törlése</button>
       </div>
     </section>
 

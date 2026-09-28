@@ -400,3 +400,7 @@ html, body {
   .content { padding: 16px; }
   .time-grid { grid-template-columns: 1fr; }
 }
+
+#panel-music .form-card { display: flex; flex-direction: column; gap: 12px; }
+#panel-music .form-row { align-items: center; }
+#musicListbox option.now-playing { font-weight: 700; color: var(--success-text); }
