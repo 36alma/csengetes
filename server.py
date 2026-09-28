@@ -16,11 +16,13 @@ from flask import Flask, abort, jsonify, request, send_from_directory, session
 from werkzeug.utils import secure_filename
 
 import audio_player
-import config_store
+from config_store import config
 import schedule_store
 import scheduler as scheduler_mod
 import time_source
 from logger_setup import LOG_PATH, setup_logging
+from services.music import download as music_download
+from services.music import MusicDownloadError, MusicService, validate_url
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MEDIA_DIR = os.path.join(BASE_DIR, "media")
@@ -35,22 +37,26 @@ AUTH_TOKEN = secrets.token_urlsafe(32)
 
 DEFAULT_MAX_UPLOAD_MB = 20
 
-config_data = config_store.load_config()
 app.config["MAX_CONTENT_LENGTH"] = int(
-    config_data.get("max_upload_mb", DEFAULT_MAX_UPLOAD_MB) * 1024 * 1024
+    config.MAX_UPLOAD_MB * 1024 * 1024
+    
 )
 
 player = audio_player.AudioPlayer()
-time_src = time_source.TimeSource(ntp_server=config_data.get("ntp_server", "pool.ntp.org"))
+time_src = time_source.TimeSource(ntp_server=config.NTP_SERVER)
 scheduler = scheduler_mod.Scheduler(time_src, player)
 
-_device_index = config_data.get("device_index")
-if _device_index is not None:
+# Az eszkozt nev alapjan keressuk meg (az index eszkozvaltozasnal elcsuszhat)
+if config.DEVICE_NAME:
+    _device_index = player.find_device_index(config.DEVICE_NAME)
+    if _device_index is None:
+        logger.warning("A mentett kimeneti eszkoz nem talalhato (%s), alapertelmezett hasznalata.", config.DEVICE_NAME)
     player.set_device(_device_index)
-player.set_volume(config_data.get("volume_percent", 100.0))
-time_src.set_mode(config_data.get("time_mode", "ntp"))
+    config.DEVICE_INDEX = _device_index
+player.set_volume(config.VOLUME_PERCENT)
+time_src.set_mode(config.TIME_MODE)
 
-_active_name = config_data.get("active_schedule")
+_active_name = config.ACTIVE_SCHEDULE
 if _active_name and _active_name in schedule_store.list_schedules():
     try:
         scheduler.set_active_schedule(schedule_store.load(_active_name))
@@ -59,7 +65,7 @@ if _active_name and _active_name in schedule_store.list_schedules():
 
 
 def _save_config() -> None:
-    config_store.save_config(config_data)
+    config.save_config()
 
 
 def _media_files() -> list[str]:
@@ -93,7 +99,7 @@ def list_schedules():
     return jsonify(
         {
             "schedules": schedule_store.list_schedules(),
-            "active": config_data.get("active_schedule"),
+            "active": config.ACTIVE_SCHEDULE,
         }
     )
 
@@ -141,7 +147,7 @@ def activate_schedule(name: str):
     except (schedule_store.ScheduleError, OSError) as exc:
         return jsonify({"error": str(exc)}), 400
     scheduler.set_active_schedule(data)
-    config_data["active_schedule"] = name
+    config.ACTIVE_SCHEDULE = name
     _save_config()
     logger.info("Aktiv csengetesi rend: %s", name)
     return jsonify({"ok": True})
@@ -152,7 +158,7 @@ def activate_schedule(name: str):
 
 @app.get("/api/media")
 def list_media():
-    return jsonify({"files": _media_files(), "default": config_data.get("default_media_file", "")})
+    return jsonify({"files": _media_files(), "default": config.DEFAULT_MEDIA_FILE})
 
 
 @app.post("/api/media/upload")
@@ -172,7 +178,7 @@ def upload_media():
 
 @app.get("/api/media/upload-limit")
 def get_upload_limit():
-    return jsonify({"max_upload_mb": config_data.get("max_upload_mb", DEFAULT_MAX_UPLOAD_MB)})
+    return jsonify({"max_upload_mb": config.MAX_UPLOAD_MB})
 
 
 @app.post("/api/media/upload-limit")
@@ -184,7 +190,7 @@ def set_upload_limit():
         return jsonify({"error": "Ervenytelen ertek."}), 400
     if mb <= 0 or mb > 1024:
         return jsonify({"error": "A limit 0 es 1024 MB kozott lehet."}), 400
-    config_data["max_upload_mb"] = mb
+    config.MAX_UPLOAD_MB = mb
     _save_config()
     app.config["MAX_CONTENT_LENGTH"] = int(mb * 1024 * 1024)
     logger.info("Feltoltesi meretlimit beallitva: %.1f MB", mb)
@@ -193,7 +199,7 @@ def set_upload_limit():
 
 @app.errorhandler(413)
 def handle_too_large(_exc):
-    limit = config_data.get("max_upload_mb", DEFAULT_MAX_UPLOAD_MB)
+    limit = config.MAX_UPLOAD_MB
     logger.warning("Feltoltes elutasitva: tul nagy fajl (limit: %s MB)", limit)
     return jsonify({"error": f"A fajl tul nagy. A megengedett maximum: {limit} MB."}), 413
 
@@ -204,7 +210,7 @@ def set_default_media():
     filename = body.get("filename", "").strip()
     if not filename:
         return jsonify({"error": "Fajlnev kotelezo."}), 400
-    config_data["default_media_file"] = filename
+    config.DEFAULT_MEDIA_FILE = filename
     _save_config()
     logger.info("Alapertelmezett csengohang beallitva: %s", filename)
     return jsonify({"ok": True})
@@ -231,6 +237,128 @@ def play_media():
     return jsonify({"ok": True})
 
 
+# ---------- zene (YouTube) ----------
+
+DOWNLOAD_DIR = music_download.DOWNLOAD_DIR
+_music_lock = threading.Lock()
+_music_current: MusicService | None = None
+
+
+def _music_files() -> list[str]:
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    return sorted(f for f in os.listdir(DOWNLOAD_DIR) if f.lower().endswith(".mp3"))
+
+
+def _music_path(filename: str) -> str | None:
+    """A download/ mappan beluli, letezo fajl utvonala, kulonben None."""
+    safe = os.path.basename(str(filename or "").strip())
+    root = os.path.realpath(DOWNLOAD_DIR)
+    path = os.path.realpath(os.path.join(root, safe))
+    if not safe or not path.startswith(root + os.sep) or not os.path.isfile(path):
+        return None
+    return path
+
+
+def _start_music(service: MusicService):
+    """Elinditja a szolgaltatast; egyszerre csak egy zene futhat."""
+    global _music_current
+    with _music_lock:
+        if _music_current is not None and _music_current.status in ("downloading", "playing"):
+            return jsonify({"error": "Mar fut egy zene, allitsd le elobb."}), 409
+        _music_current = service
+    threading.Thread(target=service.run, daemon=True).start()
+    return jsonify({"ok": True, "started": True}), 202
+
+
+@app.get("/api/music")
+def list_music():
+    return jsonify({"files": _music_files()})
+
+
+@app.post("/api/music/play")
+def play_music():
+    body = request.get_json(force=True)
+    urls = body.get("urls")
+    if isinstance(urls, str):
+        urls = [urls]
+    if not isinstance(urls, list) or not urls:
+        return jsonify({"error": "Az 'urls' mezo kotelezo."}), 400
+    try:
+        urls = [validate_url(u) for u in urls]
+    except MusicDownloadError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return _start_music(
+        MusicService(
+            urls,
+            player,
+            time_src,
+            force=bool(body.get("force", False)),
+            now_play=bool(body.get("now_play", False)),
+        )
+    )
+
+
+@app.post("/api/music/play-file")
+def play_music_file():
+    body = request.get_json(force=True)
+    names = body.get("filenames")
+    if isinstance(names, str):
+        names = [names]
+    if not isinstance(names, list) or not names:
+        return jsonify({"error": "A 'filenames' mezo kotelezo."}), 400
+    paths = [_music_path(n) for n in names]
+    if None in paths:
+        return jsonify({"error": "A fajl nem talalhato."}), 404
+    return _start_music(
+        MusicService(
+            None,
+            player,
+            time_src,
+            force=bool(body.get("force", False)),
+            now_play=bool(body.get("now_play", False)),
+            files=paths,
+        )
+    )
+
+
+@app.get("/api/music/status")
+def music_status():
+    svc = _music_current
+    if svc is None:
+        return jsonify({"status": "idle", "files": [], "current": None, "error": None})
+    return jsonify(
+        {
+            "status": svc.status,
+            "files": [os.path.basename(f) for f in svc.filename],
+            "current": os.path.basename(svc.current) if svc.current else None,
+            "error": svc.error,
+        }
+    )
+
+
+@app.post("/api/music/stop")
+def stop_music():
+    svc = _music_current
+    if svc is not None:
+        svc.stop()
+    else:
+        player.stop()
+    return jsonify({"ok": True})
+
+
+@app.delete("/api/music/<name>")
+def delete_music(name: str):
+    path = _music_path(name)
+    if path is None:
+        return jsonify({"error": "A fajl nem talalhato."}), 404
+    svc = _music_current
+    if svc is not None and svc.status == "playing" and path in [os.path.realpath(f) for f in svc.filename]:
+        return jsonify({"error": "A fajl jelenleg lejatszas alatt all."}), 409
+    os.remove(path)
+    logger.info("Zene torolve: %s", os.path.basename(path))
+    return jsonify({"ok": True})
+
+
 # ---------- ido ----------
 
 
@@ -253,7 +381,7 @@ def set_time_mode():
         time_src.set_mode(mode)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
-    config_data["time_mode"] = mode
+    config.TIME_MODE = mode
     _save_config()
     return jsonify({"ok": True})
 
@@ -264,8 +392,8 @@ def sync_time():
     server_host = body.get("ntp_server", "").strip()
     if server_host:
         time_src.set_ntp_server(server_host)
-        config_data["ntp_server"] = server_host
-        _save_config()
+    config.NTP_SERVER = server_host
+    _save_config()
     try:
         now = time_src.sync_now()
     except Exception as exc:
@@ -283,7 +411,7 @@ def set_manual_time():
     except ValueError:
         return jsonify({"error": "Ervenytelen formatum. Varhato: YYYY-MM-DD HH:MM:SS"}), 400
     time_src.set_manual(value)
-    config_data["time_mode"] = "manual"
+    config.NTP_SERVER = "manual"
     _save_config()
     return jsonify({"ok": True})
 
@@ -309,7 +437,8 @@ def set_device():
     body = request.get_json(force=True)
     index = body.get("index")
     player.set_device(index)
-    config_data["device_index"] = index
+    config.DEVICE_INDEX = index
+    config.DEVICE_NAME = player.get_device_name()
     _save_config()
     return jsonify({"ok": True})
 
@@ -319,7 +448,7 @@ def set_volume():
     body = request.get_json(force=True)
     percent = float(body.get("percent", 100.0))
     player.set_volume(percent)
-    config_data["volume_percent"] = player.get_volume()
+    config.VOLUME_PERCENT = player.get_volume()
     _save_config()
     return jsonify({"ok": True, "percent": player.get_volume()})
 
