@@ -47,16 +47,18 @@
               <input type="checkbox" id="mixerPower">
               <span class="switch-slider"></span>
             </span>
-            <span class="switch-label" id="mixerPowerLabel">Kikapcsolva</span>
+            <span class="switch-label" id="mixerPowerLabel">Mikrofon: ki</span>
           </label>
         </div>
         <div class="meter" role="meter" aria-label="Jelszint" aria-valuemin="0" aria-valuemax="100" id="meter">
           <div class="meter-fill" id="meterFill"></div>
         </div>
         <div class="source-chips">
+          <span class="chip" id="chipBell">Csengő</span>
           <span class="chip" id="chipMusic">Zene</span>
           <span class="chip" id="chipMic">Mikrofon</span>
         </div>
+        <div class="mixer-warning" id="mixerWarning" hidden>A kimeneti eszköz nem érhető el, a hang csak a streamen szól.</div>
       </div>
 
       <div class="form-card mixer-volumes">

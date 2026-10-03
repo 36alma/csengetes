@@ -695,8 +695,12 @@ function renderMixer(data) {
   else setMixerStateView("idle", "Nincs jel", "Mixer: nincs jel");
 
   const power = document.getElementById("mixerPower");
-  if (document.activeElement !== power) power.checked = data.running;
-  document.getElementById("mixerPowerLabel").textContent = data.running ? "Bekapcsolva" : "Kikapcsolva";
+  if (document.activeElement !== power) power.checked = data.mic_live;
+  document.getElementById("mixerPowerLabel").textContent = data.mic_live ? "Mikrofon: élő" : "Mikrofon: ki";
+  document.getElementById("mixerWarning").hidden = data.output_ok !== false;
+  if (data.running && data.output_ok === false) {
+    document.getElementById("headerMixerText").textContent += " (nincs kimenet)";
+  }
 
   // a jelszint gyenge jeleknel is latszodjon: gyokos skala
   const shown = Math.min(1, Math.sqrt(data.level));
@@ -706,8 +710,9 @@ function renderMixer(data) {
   document.getElementById("meter").setAttribute("aria-valuenow", (shown * 100).toFixed(0));
 
   const flags = data.flags || [];
+  document.getElementById("chipBell").classList.toggle("on", data.running && flags.includes("BELL"));
   document.getElementById("chipMusic").classList.toggle("on", data.running && flags.includes("PLAYING_MUSIC"));
-  document.getElementById("chipMic").classList.toggle("on", data.running && flags.includes("PLAYING_MIC"));
+  document.getElementById("chipMic").classList.toggle("on", data.mic_live && flags.includes("PLAYING_MIC"));
 
   for (const v of MIXER_VOLUMES) {
     const slider = document.getElementById(v.slider);
@@ -738,8 +743,7 @@ async function pollMixer() {
 })();
 
 document.getElementById("mixerPower").addEventListener("change", async (e) => {
-  const on = e.target.checked;
-  const result = await post(on ? "/api/mixer/start" : "/api/mixer/stop");
+  const result = await post("/api/mixer/mic", { live: e.target.checked });
   if (result && result.error) await showError(result.error);
   e.target.blur(); // a fókusz elengedése után a lekérdezés a valós állapotot mutatja (hiba esetén visszakapcsol)
   await pollMixer();
