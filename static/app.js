@@ -767,13 +767,24 @@ async function loadMixerInputs() {
   if (!data || data.error) return;
   const select = document.getElementById("mixerInputSelect");
   select.innerHTML = "";
-  for (const d of data.inputs) {
+  const inputs = data.inputs || [];
+  if (inputs.length === 0) {
+    // mikrofon nelkuli gep: egy letiltott jelzo opcio, a tobbi betoltes fut tovabb
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Nincs mikrofon";
+    opt.disabled = true;
+    select.appendChild(opt);
+    select.value = "";
+    return;
+  }
+  for (const d of inputs) {
     const opt = document.createElement("option");
     opt.value = d.index;
     opt.textContent = d.name;
     select.appendChild(opt);
   }
-  select.value = data.current.index;
+  select.value = data.current ? data.current.index : "";
 }
 
 document.getElementById("mixerInputSelect").addEventListener("change", async (e) => {
@@ -789,7 +800,8 @@ async function loadMixerMusic() {
   const select = document.getElementById("mixerMusicSelect");
   const selected = select.value;
   select.innerHTML = "";
-  for (const name of (data && data.files) || []) {
+  const files = data && !data.error && Array.isArray(data.files) ? data.files : [];
+  for (const name of files) {
     const opt = document.createElement("option");
     opt.value = name;
     opt.textContent = name;
@@ -822,17 +834,27 @@ document.querySelector('.tab[data-tab="mixer"]').addEventListener("click", () =>
 // ---------- inicializalas ----------
 
 async function init() {
-  await loadMixerInputs();
-  await loadMixerMusic();
-  await loadMediaList();
-  await loadSchedulesList();
-  await loadTimeState();
-  await loadOutputState();
-  await loadUploadLimit();
-  await loadMusicList();
-  await loadMusicStatus();
-  await loadLogs();
-  cancelEdit();
+  // minden betoltes kulon: egy hiba (pl. nincs mikrofon) ne allitsa le a tobbit
+  const loaders = [
+    loadMixerInputs,
+    loadMixerMusic,
+    loadMediaList,
+    loadSchedulesList,
+    loadTimeState,
+    loadOutputState,
+    loadUploadLimit,
+    loadMusicList,
+    loadMusicStatus,
+    loadLogs,
+    cancelEdit,
+  ];
+  for (const load of loaders) {
+    try {
+      await load();
+    } catch (e) {
+      console.error("Betöltési hiba (" + load.name + "):", e);
+    }
+  }
 }
 
 init();
