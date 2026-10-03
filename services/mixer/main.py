@@ -1,3 +1,4 @@
+import logging
 import threading
 import time
 
@@ -8,10 +9,14 @@ import soundfile as sf
 from model import InputDevice, MixerStatus
 from services.mic import Mic
 from .buffer import PacketBuffer
+from .errors import AudioPlayerError
 from .mixing import BLOCK_SIZE, SAMPLE_RATE, mix_blocks, split_mp3_frames
+
+logger = logging.getLogger("csengetes")
 
 BITRATE_KBPS = 128
 LEVEL_DECAY = 0.85  # blokkonkenti lecsengés (~26 ms): a jelszint nem ugral, de gyorsan elhal
+KIND_FLAGS = {"music": MixerStatus.PLAYING_MUSIC, "bell": MixerStatus.BELL}
 
 
 def load_music(filepath: str) -> np.ndarray:
@@ -26,6 +31,21 @@ def load_music(filepath: str) -> np.ndarray:
     return mono
 
 
+class Playback:
+    """Egy fajl lejatszasanak allapota: a hivo a `done` esemenyre var."""
+
+    def __init__(self, kind: str, duration_s: float):
+        self.kind = kind
+        self.duration_s = duration_s
+        self.done = threading.Event()
+        self.error: str | None = None
+        self.cancelled = False
+
+    def cancel(self) -> None:
+        self.cancelled = True
+        self.done.set()
+
+
 class Mixer():
     def __init__(self, mic: Mic | None = None, buffer: PacketBuffer | None = None):
         self.mic = mic if mic is not None else Mic()
@@ -34,9 +54,10 @@ class Mixer():
         self.music_volume = 1.0
         self.status = MixerStatus.IDLE
         self.level = 0.0  # kimeneti csucsertek 0..1, blokkonkent lecsengetve (a feluleti meronek)
-        self._music: np.ndarray | None = None
-        self._music_pos = 0
-        self._music_lock = threading.Lock()
+        self._file: np.ndarray | None = None
+        self._file_pos = 0
+        self._playback: Playback | None = None
+        self._file_lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -76,18 +97,40 @@ class Mixer():
     def running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
-    def start_music(self,filepath:str):
-        music = load_music(filepath)
-        with self._music_lock:
-            self._music = music
-            self._music_pos = 0
+    @property
+    def file_playing(self) -> bool:
+        return self._playback is not None
 
-    def stop_music(self):
-        with self._music_lock:
-            self._music = None
+    def play_file(self, filepath: str, kind: str) -> Playback:
+        """Dekodolja es forraskent beallitja a fajlt; a korabbi lejatszast megszakitja."""
+        if kind not in KIND_FLAGS:
+            raise ValueError(f"Ismeretlen forrastipus: {kind}")
+        try:
+            samples = load_music(filepath)
+        except Exception as exc:
+            logger.error("A fajl nem dekodolhato (%s): %s", filepath, exc)
+            raise AudioPlayerError("A fajl nem olvashato.") from exc
+        playback = Playback(kind, len(samples) / SAMPLE_RATE)
+        with self._file_lock:
+            if self._playback is not None:
+                self._playback.cancel()
+            self._file = samples
+            self._file_pos = 0
+            self._playback = playback
+        return playback
+
+    def stop_file(self, playback: Playback | None = None) -> None:
+        """A megadott (vagy ha None, az aktualis) lejatszas megszakitasa."""
+        with self._file_lock:
+            current = self._playback
+            if current is None or (playback is not None and playback is not current):
+                return
+            current.cancel()
+            self._file = None
+            self._playback = None
 
     def start(self):
-        """Mikrofon es keverő szal inditasa; a kesz csomagok a self.buffer-be kerulnek."""
+        """Keverő szal inditasa; a kesz csomagok a self.buffer-be kerulnek."""
         if self.running:
             return
         self._stop.clear()
@@ -101,20 +144,24 @@ class Mixer():
             self._thread.join()
             self._thread = None
         self.mic.stop()
+        self.stop_file()
         self.status = MixerStatus.IDLE
         self.level = 0.0
 
-    def _next_music_block(self) -> np.ndarray | None:
-        with self._music_lock:
-            if self._music is None:
-                return None
-            block = self._music[self._music_pos:self._music_pos + BLOCK_SIZE]
-            self._music_pos += BLOCK_SIZE
-            if self._music_pos >= len(self._music):
-                self._music = None
+    def _next_file_block(self) -> tuple[np.ndarray | None, MixerStatus]:
+        with self._file_lock:
+            if self._file is None:
+                return None, MixerStatus.IDLE
+            block = self._file[self._file_pos:self._file_pos + BLOCK_SIZE]
+            self._file_pos += BLOCK_SIZE
+            flag = KIND_FLAGS[self._playback.kind]
+            if self._file_pos >= len(self._file):
+                self._playback.done.set()
+                self._file = None
+                self._playback = None
             if len(block) < BLOCK_SIZE:
                 block = np.pad(block, (0, BLOCK_SIZE - len(block)))
-            return block
+            return block, flag
 
     def _run(self):
         encoder = lameenc.Encoder()
@@ -127,17 +174,17 @@ class Mixer():
         packets = 0
         next_tick = time.monotonic()
         while not self._stop.is_set():
-            music = self._next_music_block()
+            music, file_flag = self._next_file_block()
             mic = self.mic.read_block()
 
-            status = MixerStatus.IDLE
-            if music is not None:
-                status |= MixerStatus.PLAYING_MUSIC
+            status = file_flag
             if mic is not None and self.mic_volume > 0.0:
                 status |= MixerStatus.PLAYING_MIC
             self.status = status
 
-            pcm = mix_blocks(music, mic, self.music_volume, self.mic_volume, self.master_volume)
+            # a csengo hangereje nem fugg a zene csuszkatol
+            file_volume = self.music_volume if file_flag == MixerStatus.PLAYING_MUSIC else 1.0
+            pcm = mix_blocks(music, mic, file_volume, self.mic_volume, self.master_volume)
             self.level = max(int(np.abs(pcm.astype(np.int32)).max()) / 32767, self.level * LEVEL_DECAY)
             frames, pending = split_mp3_frames(pending + encoder.encode(pcm.tobytes()))
             for frame in frames:

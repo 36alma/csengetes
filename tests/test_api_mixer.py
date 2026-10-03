@@ -12,34 +12,10 @@ from starlette.websockets import WebSocketDisconnect
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from api import mixer as api_mixer
+from fakes import FakeMic, wait_until
 from model import AudioPacket, InputDevice
 from services.mixer import Mixer
 from services.mixer.mixing import BLOCK_SIZE, SAMPLE_RATE
-
-
-class FakeMic:
-    """Mic helyettes hardver nelkul."""
-
-    def __init__(self):
-        self.volume = 1.0
-        self.current_output_device = InputDevice(index=0, name="fake")
-        t = np.arange(BLOCK_SIZE) / SAMPLE_RATE
-        self._block = (0.3 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
-
-    def listinput(self):
-        return [InputDevice(index=0, name="fake"), InputDevice(index=3, name="masik")]
-
-    def setoutputdevices(self, device):
-        self.current_output_device = device
-
-    def start(self, samplerate, blocksize):
-        pass
-
-    def stop(self):
-        pass
-
-    def read_block(self):
-        return self._block
 
 
 @pytest.fixture
@@ -105,9 +81,9 @@ def test_music_path_protection_and_playback(env):
     assert env.client.post("/api/mixer/music", json={"name": "nincs.mp3"}).status_code == 404
     assert env.client.post("/api/mixer/music", json={"name": "../server.py"}).status_code == 404
     assert env.client.post("/api/mixer/music", json={"name": "dal.wav"}).status_code == 200
-    assert env.mixer._music is not None
+    assert env.mixer.file_playing
     assert env.client.delete("/api/mixer/music").status_code == 200
-    assert env.mixer._music is None
+    assert not env.mixer.file_playing
 
 
 def test_unreadable_music_is_400(env):

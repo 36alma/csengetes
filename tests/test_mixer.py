@@ -1,6 +1,7 @@
 import os
 import sys
 import threading
+import time
 
 import numpy as np
 import pytest
@@ -8,32 +9,13 @@ import soundfile as sf
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from fakes import FakeMic, wait_until
 from model import AudioPacket, MixerStatus
 from model.audio import HEADER_SIZE
 from services.mixer import Mixer, PacketBuffer
+from services.mixer.errors import AudioPlayerError
+from services.mixer.main import Playback
 from services.mixer.mixing import BLOCK_SIZE, SAMPLE_RATE, mix_blocks, split_mp3_frames
-
-
-class FakeMic:
-    """Mic helyettes: allando szinuszt ad, hardver nelkul."""
-
-    def __init__(self):
-        self.volume = 1.0
-        self.current_output_device = None
-        t = np.arange(BLOCK_SIZE) / SAMPLE_RATE
-        self._block = (0.3 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
-
-    def start(self, samplerate, blocksize):
-        pass
-
-    def stop(self):
-        pass
-
-    def read_block(self):
-        return self._block
-
-    def setoutputdevices(self, device):
-        self.current_output_device = device
 
 
 # ---- AudioPacket ----
@@ -155,7 +137,7 @@ def test_mixer_music_sets_mixing_status(tmp_path):
     wav = tmp_path / "t.wav"
     sf.write(wav, 0.2 * np.sin(np.linspace(0, 2000, SAMPLE_RATE)), 22050)  # mas mintavetel, resample
     mixer = Mixer(mic=FakeMic())
-    mixer.start_music(str(wav))
+    mixer.play_file(str(wav), "music")
     mixer.start()
     try:
         packets = _collect(mixer.buffer, 12)
@@ -187,3 +169,84 @@ def test_mixer_level_follows_signal_and_resets():
     finally:
         mixer.stop()
     assert mixer.level == 0.0
+
+
+def _wav(tmp_path, name, seconds):
+    path = tmp_path / name
+    t = np.linspace(0, seconds * 440 * 2 * np.pi, int(seconds * SAMPLE_RATE))
+    sf.write(path, 0.4 * np.sin(t), SAMPLE_RATE)
+    return str(path)
+
+
+def _peak_level(mixer, seconds):
+    deadline = time.time() + seconds
+    peak = 0.0
+    while time.time() < deadline:
+        peak = max(peak, mixer.level)
+        time.sleep(0.01)
+    return peak
+
+
+def test_play_file_sets_bell_flag_and_finishes(tmp_path):
+    mixer = Mixer(mic=FakeMic())
+    mixer.start()
+    try:
+        playback = mixer.play_file(_wav(tmp_path, "b.wav", 0.25), "bell")
+        packets = _collect(mixer.buffer, 14)
+        assert playback.done.wait(3) and not playback.cancelled
+    finally:
+        mixer.stop()
+    assert any(p.status & MixerStatus.BELL for p in packets)
+    assert not mixer.file_playing
+
+
+def test_new_play_file_cancels_previous(tmp_path):
+    mixer = Mixer(mic=FakeMic())
+    first = mixer.play_file(_wav(tmp_path, "a.wav", 2), "music")
+    second = mixer.play_file(_wav(tmp_path, "b.wav", 1), "bell")
+    assert first.cancelled and first.done.is_set()
+    assert mixer.file_playing and not second.done.is_set()
+
+
+def test_stop_file_only_stops_matching_playback(tmp_path):
+    mixer = Mixer(mic=FakeMic())
+    playback = mixer.play_file(_wav(tmp_path, "a.wav", 2), "music")
+    mixer.stop_file(Playback("music", 1.0))  # nem az aktualis: nem tortenik semmi
+    assert mixer.file_playing and not playback.cancelled
+    mixer.stop_file(playback)
+    assert playback.cancelled and not mixer.file_playing
+
+
+def test_unreadable_file_raises_player_error(tmp_path):
+    bad = tmp_path / "rossz.wav"
+    bad.write_bytes(b"nem hang")
+    with pytest.raises(AudioPlayerError):
+        Mixer(mic=FakeMic()).play_file(str(bad), "music")
+
+
+def test_unknown_kind_rejected(tmp_path):
+    with pytest.raises(ValueError):
+        Mixer(mic=FakeMic()).play_file(_wav(tmp_path, "a.wav", 0.1), "zaj")
+
+
+def test_stop_wakes_waiting_playback(tmp_path):
+    mixer = Mixer(mic=FakeMic())
+    mixer.start()
+    playback = mixer.play_file(_wav(tmp_path, "a.wav", 5), "music")
+    mixer.stop()
+    assert playback.done.wait(1) and playback.cancelled
+
+
+def test_bell_ignores_music_volume(tmp_path):
+    mixer = Mixer(mic=FakeMic())
+    mixer.change_volume(0.0)  # a mikrofon nem zavar
+    mixer.change_music_volume(0.0)
+    mixer.start()
+    try:
+        mixer.play_file(_wav(tmp_path, "csengo.wav", 1), "bell")
+        assert _peak_level(mixer, 0.5) > 0.1
+        mixer.play_file(_wav(tmp_path, "zene.wav", 1), "music")
+        _peak_level(mixer, 0.7)  # a csengo lecsengese (0.4 * 0.85^27 < 0.01)
+        assert _peak_level(mixer, 0.3) < 0.01
+    finally:
+        mixer.stop()

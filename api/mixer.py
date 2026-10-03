@@ -11,6 +11,7 @@ from fastapi import APIRouter, Body, WebSocket
 
 from model import MixerStatus
 from services.music import download as music_download
+from services.mixer.errors import AudioPlayerError
 from services.mixer.main import BITRATE_KBPS
 from services.mixer.mixing import BLOCK_SIZE, SAMPLE_RATE
 
@@ -137,15 +138,14 @@ def create_router(ctx: ApiContext) -> APIRouter:
         if path is None:
             return error("A zene nem talalhato.", 404)
         try:
-            ctx.get_mixer().start_music(path)
-        except Exception:
-            logger.exception("A zene betoltese sikertelen: %s", path)
-            return error("A zenefajl nem olvashato.")
+            ctx.get_mixer().play_file(path, "music")
+        except AudioPlayerError as exc:
+            return error(str(exc))
         return {"ok": True}
 
     @router.delete("/api/mixer/music")
     def stop_music():
-        ctx.get_mixer().stop_music()
+        ctx.get_mixer().stop_file()
         return {"ok": True}
 
     @router.websocket("/api/mixer/stream")
