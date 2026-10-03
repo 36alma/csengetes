@@ -73,6 +73,20 @@ def _save_config() -> None:
     config.save_config()
 
 
+_mixer = None
+_mixer_lock = threading.Lock()
+
+
+def _get_mixer():
+    # Lusta letrehozas: a Mixer mikrofon-eszkozt kerdez le, ami nelkul a szerver is elindulhat
+    global _mixer
+    with _mixer_lock:
+        if _mixer is None:
+            from services.mixer import Mixer
+            _mixer = Mixer()
+        return _mixer
+
+
 @app.middleware("http")
 async def _auth_and_limits(request: Request, call_next):
     new_session = None
@@ -115,6 +129,8 @@ register_api(
         scheduler=scheduler,
         media_dir=MEDIA_DIR,
         save_config=_save_config,
+        get_mixer=_get_mixer,
+        ws_authorized=lambda ws: ws.cookies.get(SESSION_COOKIE) in _sessions,
     ),
 )
 
@@ -159,6 +175,8 @@ def main():
 
     _uvicorn.should_exit = True
     scheduler.stop()
+    if _mixer is not None:
+        _mixer.stop()
 
 
 if __name__ == "__main__":

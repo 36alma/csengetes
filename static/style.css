@@ -404,3 +404,72 @@ html, body {
 #panel-music .form-card { display: flex; flex-direction: column; gap: 12px; }
 #panel-music .form-row { align-items: center; }
 #musicListbox option.now-playing { font-weight: 700; color: var(--success-text); }
+
+/* ---------- Mixer ful ---------- */
+
+.header-mixer { margin-left: auto; }
+
+.mixer-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.mixer-state-text { font-size: 18px; font-weight: 700; color: var(--text); }
+.header-mixer #headerMixerText { font-size: 12.5px; }
+
+.state-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--text-faint);
+  transition: background 150ms ease, box-shadow 150ms ease;
+}
+.mixer-state[data-state="idle"] .state-dot { background: var(--warning); }
+.mixer-state[data-state="on"] .state-dot {
+  background: var(--success-text);
+  box-shadow: 0 0 0 4px rgba(127, 217, 154, 0.18);
+}
+.mixer-state[data-state="on"] .mixer-state-text { color: var(--success-text); }
+
+.mixer-card { display: flex; flex-direction: column; gap: 16px; }
+.mixer-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+
+.meter {
+  height: 12px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.meter-fill {
+  height: 100%;
+  width: 0;
+  background: var(--success-text);
+  border-radius: 999px;
+  transition: width 120ms linear, background 120ms ease;
+}
+.meter-fill.hot { background: var(--warning); }
+
+.source-chips { display: flex; gap: 8px; }
+.chip {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-faint);
+  background: var(--input-bg);
+  transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+.chip.on {
+  color: var(--success-text);
+  border-color: rgba(127, 217, 154, 0.4);
+  background: rgba(127, 217, 154, 0.1);
+}
+
+.mixer-volumes { display: flex; flex-direction: column; gap: 14px; }
+.volume-row { display: grid; grid-template-columns: 110px 1fr 56px; align-items: center; gap: 14px; }
+.volume-row .slider { max-width: none; }
+.volume-value { font-size: 13px; color: var(--text-muted); text-align: right; font-variant-numeric: tabular-nums; }
+
+#panel-mixer .form-card .form-row + .form-row { margin-top: 12px; }

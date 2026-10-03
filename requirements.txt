@@ -11,3 +11,4 @@ mutagen
 sounddevice
 soundfile
 numpy
+lameenc

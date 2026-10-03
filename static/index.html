@@ -18,10 +18,14 @@
   <div class="header">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
     <span class="header-title">Csengetési rend</span>
+    <span class="mixer-state header-mixer" id="headerMixer" data-state="off" title="Mixer állapota">
+      <span class="state-dot"></span><span id="headerMixerText">Mixer: leállítva</span>
+    </span>
   </div>
 
   <div class="tabs" role="tablist">
-    <button class="tab active" data-tab="schedule">Csengetési rend</button>
+    <button class="tab active" data-tab="mixer">Mixer</button>
+    <button class="tab" data-tab="schedule">Csengetési rend</button>
     <button class="tab" data-tab="media">Média</button>
     <button class="tab" data-tab="music">Zene</button>
     <button class="tab" data-tab="time">Idő</button>
@@ -31,8 +35,64 @@
 
   <div class="content">
 
+    <!-- Mixer -->
+    <section class="panel active" id="panel-mixer">
+      <div class="form-card mixer-card">
+        <div class="mixer-head">
+          <div class="mixer-state" id="mixerState" data-state="off">
+            <span class="state-dot"></span><span class="mixer-state-text" id="mixerStateText">Leállítva</span>
+          </div>
+          <label class="switch-row">
+            <span class="switch">
+              <input type="checkbox" id="mixerPower">
+              <span class="switch-slider"></span>
+            </span>
+            <span class="switch-label" id="mixerPowerLabel">Kikapcsolva</span>
+          </label>
+        </div>
+        <div class="meter" role="meter" aria-label="Jelszint" aria-valuemin="0" aria-valuemax="100" id="meter">
+          <div class="meter-fill" id="meterFill"></div>
+        </div>
+        <div class="source-chips">
+          <span class="chip" id="chipMusic">Zene</span>
+          <span class="chip" id="chipMic">Mikrofon</span>
+        </div>
+      </div>
+
+      <div class="form-card mixer-volumes">
+        <div class="volume-row">
+          <span class="field-label bold">Fő hangerő</span>
+          <input type="range" class="slider" id="mixerVolMaster" min="0" max="200" step="1" value="100">
+          <span class="volume-value" id="mixerVolMasterVal">100%</span>
+        </div>
+        <div class="volume-row">
+          <span class="field-label bold">Zene</span>
+          <input type="range" class="slider" id="mixerVolMusic" min="0" max="100" step="1" value="100">
+          <span class="volume-value" id="mixerVolMusicVal">100%</span>
+        </div>
+        <div class="volume-row">
+          <span class="field-label bold">Mikrofon</span>
+          <input type="range" class="slider" id="mixerVolMic" min="0" max="100" step="1" value="100">
+          <span class="volume-value" id="mixerVolMicVal">100%</span>
+        </div>
+      </div>
+
+      <div class="form-card">
+        <div class="form-row">
+          <span class="field-label bold">Mikrofon</span>
+          <select class="select" id="mixerInputSelect" style="width:420px"></select>
+        </div>
+        <div class="form-row">
+          <span class="field-label bold">Zene</span>
+          <select class="select" id="mixerMusicSelect" style="width:420px"></select>
+          <button class="btn btn-ghost" id="btnMixerMusicPlay">Lejátszás</button>
+          <button class="btn btn-ghost" id="btnMixerMusicStop">Leállítás</button>
+        </div>
+      </div>
+    </section>
+
     <!-- Csengetesi rend -->
-    <section class="panel active" id="panel-schedule">
+    <section class="panel" id="panel-schedule">
       <div class="toolbar">
         <label class="field-label" for="scheduleSelect">Aktív rend</label>
         <select id="scheduleSelect" class="select"></select>

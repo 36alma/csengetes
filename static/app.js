@@ -662,9 +662,164 @@ setInterval(() => {
   if (document.getElementById("panel-music").classList.contains("active")) loadMusicStatus();
 }, 2000);
 
+// ---------- Mixer ful ----------
+// A felulet csak azt mutatja, hogy van-e jel es mi szol (zene, mikrofon);
+// a belso mukodes (csomagok, buffer, stream) szandekosan nem latszik.
+
+const SIGNAL_ON = 0.03;   // efelett "Van jel"
+const SIGNAL_OFF = 0.015; // ez alatt "Nincs jel" (hiszterezis, hogy ne villogjon)
+let mixerHasSignal = false;
+const mixerVolumeDebounce = {};
+
+const MIXER_VOLUMES = [
+  { key: "master", slider: "mixerVolMaster", label: "mixerVolMasterVal" },
+  { key: "music", slider: "mixerVolMusic", label: "mixerVolMusicVal" },
+  { key: "mic", slider: "mixerVolMic", label: "mixerVolMicVal" },
+];
+
+function setMixerStateView(state, text, headerText) {
+  for (const id of ["mixerState", "headerMixer"]) {
+    document.getElementById(id).dataset.state = state;
+  }
+  document.getElementById("mixerStateText").textContent = text;
+  document.getElementById("headerMixerText").textContent = headerText;
+}
+
+function renderMixer(data) {
+  if (!data.running) mixerHasSignal = false;
+  else if (data.level >= SIGNAL_ON) mixerHasSignal = true;
+  else if (data.level < SIGNAL_OFF) mixerHasSignal = false;
+
+  if (!data.running) setMixerStateView("off", "Leállítva", "Mixer: leállítva");
+  else if (mixerHasSignal) setMixerStateView("on", "Van jel", "Mixer: van jel");
+  else setMixerStateView("idle", "Nincs jel", "Mixer: nincs jel");
+
+  const power = document.getElementById("mixerPower");
+  if (document.activeElement !== power) power.checked = data.running;
+  document.getElementById("mixerPowerLabel").textContent = data.running ? "Bekapcsolva" : "Kikapcsolva";
+
+  // a jelszint gyenge jeleknel is latszodjon: gyokos skala
+  const shown = Math.min(1, Math.sqrt(data.level));
+  const fill = document.getElementById("meterFill");
+  fill.style.width = (shown * 100).toFixed(0) + "%";
+  fill.classList.toggle("hot", data.level >= 0.95);
+  document.getElementById("meter").setAttribute("aria-valuenow", (shown * 100).toFixed(0));
+
+  const flags = data.flags || [];
+  document.getElementById("chipMusic").classList.toggle("on", data.running && flags.includes("PLAYING_MUSIC"));
+  document.getElementById("chipMic").classList.toggle("on", data.running && flags.includes("PLAYING_MIC"));
+
+  for (const v of MIXER_VOLUMES) {
+    const slider = document.getElementById(v.slider);
+    // amig huzod / var a mentesre, nem irjuk felul
+    if (document.activeElement !== slider && !mixerVolumeDebounce[v.key]) {
+      slider.value = Math.round(data.volume[v.key] * 100);
+    }
+    document.getElementById(v.label).textContent = slider.value + "%";
+  }
+}
+
+async function pollMixer() {
+  try {
+    const data = await get("/api/mixer");
+    if (data && !data.error) renderMixer(data);
+  } catch (e) {
+    // a kovetkezo korben ujra probalja
+  }
+}
+
+(function startMixerPolling() {
+  const tick = async () => {
+    await pollMixer();
+    const active = document.getElementById("panel-mixer").classList.contains("active");
+    setTimeout(tick, active ? 200 : 1000);
+  };
+  tick();
+})();
+
+document.getElementById("mixerPower").addEventListener("change", async (e) => {
+  const on = e.target.checked;
+  const result = await post(on ? "/api/mixer/start" : "/api/mixer/stop");
+  if (result && result.error) await showError(result.error);
+  e.target.blur(); // a fókusz elengedése után a lekérdezés a valós állapotot mutatja (hiba esetén visszakapcsol)
+  await pollMixer();
+});
+
+for (const v of MIXER_VOLUMES) {
+  document.getElementById(v.slider).addEventListener("input", (e) => {
+    const value = Number(e.target.value);
+    document.getElementById(v.label).textContent = value + "%";
+    clearTimeout(mixerVolumeDebounce[v.key]);
+    mixerVolumeDebounce[v.key] = setTimeout(async () => {
+      mixerVolumeDebounce[v.key] = null;
+      const result = await post("/api/mixer/volume", { [v.key]: value / 100 });
+      if (result && result.error) await showError(result.error);
+    }, 150);
+  });
+}
+
+async function loadMixerInputs() {
+  const data = await get("/api/mixer/inputs");
+  if (!data || data.error) return;
+  const select = document.getElementById("mixerInputSelect");
+  select.innerHTML = "";
+  for (const d of data.inputs) {
+    const opt = document.createElement("option");
+    opt.value = d.index;
+    opt.textContent = d.name;
+    select.appendChild(opt);
+  }
+  select.value = data.current.index;
+}
+
+document.getElementById("mixerInputSelect").addEventListener("change", async (e) => {
+  const result = await post("/api/mixer/input", { index: Number(e.target.value) });
+  if (result && result.error) {
+    await showError(result.error);
+    await loadMixerInputs();
+  }
+});
+
+async function loadMixerMusic() {
+  const data = await get("/api/music");
+  const select = document.getElementById("mixerMusicSelect");
+  const selected = select.value;
+  select.innerHTML = "";
+  for (const name of (data && data.files) || []) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    select.appendChild(opt);
+  }
+  if (selected) select.value = selected;
+}
+
+document.getElementById("btnMixerMusicPlay").addEventListener("click", async () => {
+  const name = document.getElementById("mixerMusicSelect").value;
+  if (!name) {
+    await showError("Válassz ki egy zenét a listából.");
+    return;
+  }
+  const result = await post("/api/mixer/music", { name });
+  if (result && result.error) await showError(result.error);
+  await pollMixer();
+});
+
+document.getElementById("btnMixerMusicStop").addEventListener("click", async () => {
+  await api("/api/mixer/music", { method: "DELETE" });
+  await pollMixer();
+});
+
+document.querySelector('.tab[data-tab="mixer"]').addEventListener("click", () => {
+  loadMixerMusic();
+  loadMixerInputs();
+});
+
 // ---------- inicializalas ----------
 
 async function init() {
+  await loadMixerInputs();
+  await loadMixerMusic();
   await loadMediaList();
   await loadSchedulesList();
   await loadTimeState();
