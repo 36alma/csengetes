@@ -1,3 +1,6 @@
-from .main import Mixer
 from .buffer import PacketBuffer
-__all__ = ["Mixer", "PacketBuffer"]
+from .errors import AudioPlayerError
+from .main import Mixer
+from .player import MixerPlayer
+
+__all__ = ["AudioPlayerError", "Mixer", "MixerPlayer", "PacketBuffer"]
