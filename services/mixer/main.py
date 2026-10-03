@@ -47,7 +47,7 @@ class Playback:
 
 
 class Mixer():
-    def __init__(self, mic: Mic | None = None, buffer: PacketBuffer | None = None):
+    def __init__(self, mic: Mic | None = None, buffer: PacketBuffer | None = None, output_factory=None):
         self.mic = mic if mic is not None else Mic()
         self.buffer = buffer if buffer is not None else PacketBuffer()
         self.master_volume = 1.0
@@ -61,6 +61,10 @@ class Mixer():
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._mic_live = False
+        self._output_factory = output_factory  # Callable[[int | None], sink] | None
+        self.output_device_index: int | None = None  # None = rendszer alapertelmezett
+        self.output_ok = True
+        self._output_dirty = threading.Event()
 
     @property
     def current_output_device(self):
@@ -87,6 +91,32 @@ class Mixer():
         if volume < 0.0 or volume > 1.0:
             raise ValueError("Volume must be between 0.0 and 1.0")
         self.music_volume = volume
+
+    def set_output_device(self, index: int | None) -> None:
+        """Kimeneti eszkoz valtas: a keveroszal a kovetkezo blokk elott ujranyitja."""
+        self.output_device_index = index
+        self._output_dirty.set()
+
+    def _open_sink(self):
+        if self._output_factory is None:
+            return None
+        try:
+            sink = self._output_factory(self.output_device_index)
+        except Exception as exc:
+            logger.error("A kimeneti eszkoz nem nyithato meg (%s): %s", self.output_device_index, exc)
+            self.output_ok = False
+            return None
+        self.output_ok = True
+        return sink
+
+    @staticmethod
+    def _close_sink(sink) -> None:
+        if sink is None:
+            return
+        try:
+            sink.close()
+        except Exception as exc:
+            logger.warning("A kimeneti folyam lezarasa sikertelen: %s", exc)
 
     def list_inputs(self) -> list[InputDevice]:
         return self.mic.listinput()
@@ -185,31 +215,56 @@ class Mixer():
         encoder.set_channels(1)
         encoder.set_quality(2)
 
+        sink = self._open_sink()
         pending = b""
         packets = 0
         next_tick = time.monotonic()
-        while not self._stop.is_set():
-            music, file_flag = self._next_file_block()
-            mic = self.mic.read_block() if self._mic_live else None
+        try:
+            while not self._stop.is_set():
+                if self._output_dirty.is_set():
+                    self._output_dirty.clear()
+                    self._close_sink(sink)
+                    sink = self._open_sink()
+                    next_tick = time.monotonic()
 
-            status = file_flag
-            if mic is not None and self.mic_volume > 0.0:
-                status |= MixerStatus.PLAYING_MIC
-            self.status = status
+                music, file_flag = self._next_file_block()
+                mic = self.mic.read_block() if self._mic_live else None
 
-            # a csengo hangereje nem fugg a zene csuszkatol
-            file_volume = self.music_volume if file_flag == MixerStatus.PLAYING_MUSIC else 1.0
-            pcm = mix_blocks(music, mic, file_volume, self.mic_volume, self.master_volume)
-            self.level = max(int(np.abs(pcm.astype(np.int32)).max()) / 32767, self.level * LEVEL_DECAY)
-            frames, pending = split_mp3_frames(pending + encoder.encode(pcm.tobytes()))
-            for frame in frames:
-                timestamp_ms = packets * BLOCK_SIZE * 1000 // SAMPLE_RATE
-                self.buffer.publish(frame, timestamp_ms, status)
-                packets += 1
+                status = file_flag
+                if mic is not None and self.mic_volume > 0.0:
+                    status |= MixerStatus.PLAYING_MIC
+                self.status = status
 
-            next_tick += BLOCK_SIZE / SAMPLE_RATE
-            delay = next_tick - time.monotonic()
-            if delay > 0:
-                self._stop.wait(delay)
-            elif delay < -0.5:
-                next_tick = time.monotonic()  # nagy lemaradas: ujraszinkronizalas
+                # a csengo hangereje nem fugg a zene csuszkatol
+                file_volume = self.music_volume if file_flag == MixerStatus.PLAYING_MUSIC else 1.0
+                pcm = mix_blocks(music, mic, file_volume, self.mic_volume, self.master_volume)
+                self.level = max(int(np.abs(pcm.astype(np.int32)).max()) / 32767, self.level * LEVEL_DECAY)
+
+                paced_by_output = False
+                if sink is not None:
+                    try:
+                        sink.write(pcm)  # blokkol: a hardver orajele adja a tempot
+                        paced_by_output = True
+                    except Exception as exc:
+                        logger.error("A helyi kimenet kiesett: %s", exc)
+                        self.output_ok = False
+                        self._close_sink(sink)
+                        sink = None
+
+                frames, pending = split_mp3_frames(pending + encoder.encode(pcm.tobytes()))
+                for frame in frames:
+                    timestamp_ms = packets * BLOCK_SIZE * 1000 // SAMPLE_RATE
+                    self.buffer.publish(frame, timestamp_ms, status)
+                    packets += 1
+
+                if paced_by_output:
+                    next_tick = time.monotonic()
+                    continue
+                next_tick += BLOCK_SIZE / SAMPLE_RATE
+                delay = next_tick - time.monotonic()
+                if delay > 0:
+                    self._stop.wait(delay)
+                elif delay < -0.5:
+                    next_tick = time.monotonic()  # nagy lemaradas: ujraszinkronizalas
+        finally:
+            self._close_sink(sink)

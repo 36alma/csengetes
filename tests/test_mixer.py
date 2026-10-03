@@ -9,7 +9,7 @@ import soundfile as sf
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fakes import FakeMic, wait_until
+from fakes import FakeMic, FakeSink, wait_until
 from model import AudioPacket, MixerStatus
 from model.audio import HEADER_SIZE
 from services.mixer import Mixer, PacketBuffer
@@ -311,3 +311,71 @@ def test_mic_live_mixes_microphone():
     finally:
         mixer.stop()
     assert mixer.mic_live is False
+
+
+def test_local_output_receives_the_mixed_blocks():
+    sink = FakeSink()
+    calls = []
+
+    def factory(index):
+        calls.append(index)
+        return sink
+
+    mixer = Mixer(mic=FakeMic(), output_factory=factory)
+    mixer.set_mic_live(True)
+    mixer.start()
+    try:
+        _collect(mixer.buffer, 6)
+        assert wait_until(lambda: len(sink.blocks) >= 6)
+    finally:
+        mixer.stop()
+    assert calls == [None] and sink.closed
+    assert sink.blocks[0].dtype == np.int16 and len(sink.blocks[0]) == BLOCK_SIZE
+    assert mixer.output_ok is True
+
+
+def test_output_device_change_reopens_sink():
+    sinks, calls = [], []
+
+    def factory(index):
+        calls.append(index)
+        sinks.append(FakeSink())
+        return sinks[-1]
+
+    mixer = Mixer(mic=FakeMic(), output_factory=factory)
+    mixer.start()
+    try:
+        assert wait_until(lambda: len(sinks) == 1 and len(sinks[0].blocks) > 0)
+        mixer.set_output_device(5)
+        assert wait_until(lambda: calls == [None, 5])
+        assert sinks[0].closed
+    finally:
+        mixer.stop()
+    assert mixer.output_device_index == 5
+
+
+def test_unopenable_output_keeps_the_stream_running():
+    def factory(index):
+        raise OSError("nincs eszkoz")
+
+    mixer = Mixer(mic=FakeMic(), output_factory=factory)
+    mixer.set_mic_live(True)
+    mixer.start()
+    try:
+        packets = _collect(mixer.buffer, 6)
+        assert mixer.output_ok is False
+    finally:
+        mixer.stop()
+    assert len(packets) == 6
+
+
+def test_output_lost_midway_keeps_the_stream_running():
+    sink = FakeSink(fail_after=3)
+    mixer = Mixer(mic=FakeMic(), output_factory=lambda index: sink)
+    mixer.start()
+    try:
+        assert wait_until(lambda: mixer.output_ok is False)
+        packets = _collect(mixer.buffer, 20)
+    finally:
+        mixer.stop()
+    assert sink.closed and len(packets) == 20

@@ -41,3 +41,21 @@ def wait_until(predicate, timeout=3.0):
     while not predicate() and time.time() < deadline:
         time.sleep(0.02)
     return predicate()
+
+
+class FakeSink:
+    """Kimeneti sink helyettes: a blokkokat gyujti, a hardver tempojat utanozza."""
+
+    def __init__(self, fail_after=None):
+        self.blocks = []
+        self.closed = False
+        self._fail_after = fail_after
+
+    def write(self, pcm):
+        if self._fail_after is not None and len(self.blocks) >= self._fail_after:
+            raise OSError("eszkoz eltunt")
+        self.blocks.append(pcm.copy())
+        time.sleep(BLOCK_SIZE / SAMPLE_RATE)
+
+    def close(self):
+        self.closed = True
