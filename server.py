@@ -28,7 +28,7 @@ import schedule_store
 import scheduler as scheduler_mod
 import time_source
 from logger_setup import setup_logging
-from services.mixer import Mixer, MixerPlayer
+from services.mixer import Mixer, MixerPlayer, PlayGate
 from services.mixer.output import open_output_stream
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -49,7 +49,7 @@ _sessions: set[str] = set()
 DEFAULT_MAX_UPLOAD_MB = 20
 
 mixer = Mixer(output_factory=open_output_stream)
-_play_gate = threading.Lock()  # a ket lejatszo kozos kapuja: egyszerre egy hang szol
+_play_gate = PlayGate()  # a ket lejatszo kozos kapuja: egyszerre egy hang szol, a force-os csengo elsobbseget kap
 player = MixerPlayer(mixer, "bell", _play_gate)
 music_player = MixerPlayer(mixer, "music", _play_gate)
 time_src = time_source.TimeSource(ntp_server=config.NTP_SERVER)

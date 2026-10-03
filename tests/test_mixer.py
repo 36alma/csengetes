@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 import threading
@@ -10,7 +11,7 @@ import soundfile as sf
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fakes import FakeMic, FakeSink, wait_until
-from model import AudioPacket, MixerStatus
+from model import AudioPacket, InputDevice, MixerStatus
 from model.audio import HEADER_SIZE
 from services.mixer import Mixer, PacketBuffer
 from services.mixer.errors import AudioPlayerError
@@ -298,6 +299,119 @@ def test_mic_live_failure_keeps_it_off():
     with pytest.raises(RuntimeError):
         mixer.set_mic_live(True)
     assert mixer.mic_live is False
+
+
+class _SpyMic(FakeMic):
+    def __init__(self):
+        super().__init__()
+        self.events = []
+
+    def start(self, samplerate, blocksize):
+        self.events.append("start")
+
+    def stop(self):
+        self.events.append("stop")
+
+
+def test_mic_off_during_slow_start_ends_off():
+    class SlowMic(_SpyMic):
+        def __init__(self):
+            super().__init__()
+            self.entered, self.release = threading.Event(), threading.Event()
+
+        def start(self, samplerate, blocksize):
+            super().start(samplerate, blocksize)
+            self.entered.set()
+            self.release.wait(5)
+
+    mic = SlowMic()
+    mixer = Mixer(mic=mic)
+    on = threading.Thread(target=mixer.set_mic_live, args=(True,))
+    on.start()
+    assert mic.entered.wait(2)
+    off = threading.Thread(target=mixer.set_mic_live, args=(False,))
+    off.start()
+    off.join(0.2)  # a kikapcsolas a bekapcsolas utan fut le
+    mic.release.set()
+    on.join(2)
+    off.join(2)
+    assert mixer.mic_live is False
+    assert mic.events[-1] == "stop"
+
+
+def test_output_device_change_with_mic_off_does_not_record():
+    mic = _SpyMic()
+    mixer = Mixer(mic=mic)
+    mixer.change_output_device(InputDevice(index=3, name="masik"))
+    assert mic.events == [] and mic.current_output_device.index == 3
+
+
+def test_output_device_change_racing_mic_off_does_not_reopen():
+    class SlowStopMic(_SpyMic):
+        def __init__(self):
+            super().__init__()
+            self.stopping, self.release = threading.Event(), threading.Event()
+
+        def stop(self):
+            super().stop()
+            self.stopping.set()
+            self.release.wait(5)
+
+    mic = SlowStopMic()
+    mixer = Mixer(mic=mic)
+    mixer.set_mic_live(True)
+    off = threading.Thread(target=mixer.set_mic_live, args=(False,))
+    off.start()
+    assert mic.stopping.wait(2)
+    change = threading.Thread(target=mixer.change_output_device, args=(InputDevice(index=3, name="masik"),))
+    change.start()
+    change.join(0.2)
+    mic.release.set()
+    off.join(2)
+    change.join(2)
+    assert mixer.mic_live is False
+    assert "start" not in mic.events[mic.events.index("stop"):], mic.events
+
+
+def test_failed_output_device_change_turns_mic_off():
+    class FailSecondMic(_SpyMic):
+        def start(self, samplerate, blocksize):
+            super().start(samplerate, blocksize)
+            if self.events.count("start") > 1:
+                raise RuntimeError("az uj eszkoz nem nyithato")
+
+    mic = FailSecondMic()
+    mixer = Mixer(mic=mic)
+    mixer.set_mic_live(True)
+    with pytest.raises(RuntimeError):
+        mixer.change_output_device(InputDevice(index=3, name="masik"))
+    assert mixer.mic_live is False
+    assert mic.events[-1] == "stop"
+
+
+def test_mixer_thread_survives_unexpected_error(caplog):
+    class FlakyMic(FakeMic):
+        def __init__(self):
+            super().__init__()
+            self.calls = 0
+
+        def read_block(self):
+            self.calls += 1
+            if self.calls == 3:
+                raise RuntimeError("varatlan mikrofonhiba")
+            return super().read_block()
+
+    mixer = Mixer(mic=FlakyMic())
+    mixer.set_mic_live(True)
+    with caplog.at_level(logging.ERROR, logger="csengetes"):
+        mixer.start()
+        try:
+            packets = _collect(mixer.buffer, 15)
+            assert mixer.running
+        finally:
+            mixer.stop()
+    assert len(packets) == 15
+    assert any(r.exc_info and "varatlan mikrofonhiba" in str(r.exc_info[1]) for r in caplog.records)
 
 
 def test_mic_live_mixes_microphone():

@@ -11,7 +11,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fakes import FakeMic, wait_until
 from model import MixerStatus
-from services.mixer import AudioPlayerError, Mixer, MixerPlayer
+import services.mixer.main as mixer_main
+from services.mixer import AudioPlayerError, Mixer, MixerPlayer, PlayGate
 from services.mixer.mixing import SAMPLE_RATE
 from services.mixer.player import MAX_VOLUME_PERCENT
 
@@ -22,7 +23,7 @@ class Env:
     def __init__(self, tmp_path):
         self.tmp = tmp_path
         self.mixer = Mixer(mic=FakeMic())
-        gate = threading.Lock()
+        gate = PlayGate()
         kwargs = dict(gate=gate, allowed_roots=[str(tmp_path)], device_lister=lambda: DEVICES)
         self.bell = MixerPlayer(self.mixer, "bell", **kwargs)
         self.music = MixerPlayer(self.mixer, "music", **kwargs)
@@ -149,3 +150,86 @@ def test_bell_force_interrupts_music_without_error_and_next_track_waits(env):
     t1 = time.time()
     env.music.play(env.wav("kovetkezo.wav", 0.2), blocking=True)
     assert time.time() - t1 > 0.3
+
+
+# ---- F2: a force-os csengo nem kesik ----
+
+def _slow_decode(monkeypatch, match):
+    """A `match`-et tartalmazo fajlok dekodolasa a `release` esemenyig all."""
+    real = mixer_main.load_music
+    started, release = threading.Event(), threading.Event()
+
+    def slow(path):
+        if match in os.path.basename(path):
+            started.set()
+            release.wait(10)
+        return real(path)
+
+    monkeypatch.setattr(mixer_main, "load_music", slow)
+    return started, release
+
+
+def test_bell_force_not_delayed_by_slow_music_decode(env, monkeypatch):
+    started, release = _slow_decode(monkeypatch, "zene")
+    env.music.play(env.wav("zene.wav", 3.0))
+    assert started.wait(3)  # a zene dekodolasa folyamatban
+    bell_done = threading.Event()
+    try:
+        env.bell.play(env.wav("csengo.wav", 0.3), force=True, on_done=lambda err: bell_done.set())
+        assert bell_done.wait(2.0), "a csengo a zene dekodolasara vart"
+    finally:
+        release.set()
+    assert wait_until(lambda: env.mixer.file_playing)  # a zene a csengo utan szol
+    env.music.stop()
+
+
+def test_bell_force_jumps_ahead_of_queued_music(env, monkeypatch):
+    env.music.play(env.wav("zene1.wav", 10.0))
+    assert wait_until(env.music.is_playing)
+    decoded = threading.Event()
+    real = mixer_main.load_music
+
+    def mark(path):
+        samples = real(path)
+        if "zene2" in path:
+            decoded.set()
+        return samples
+
+    monkeypatch.setattr(mixer_main, "load_music", mark)
+    env.music.play(env.wav("zene2.wav", 10.0))  # nem force: a kapun var
+    assert decoded.wait(3)
+    time.sleep(0.3)  # a sorban allo keres eljut a kapuig
+
+    bell_done = threading.Event()
+    env.bell.play(env.wav("csengo.wav", 0.3), force=True, on_done=lambda err: bell_done.set())
+    assert bell_done.wait(3.0), "a sorban allo zene megelozte a csengot"
+    assert wait_until(env.music.is_playing)  # utana a sorban allo zene kovetkezik
+    env.music.stop()
+
+
+# ---- F3: a zene-muveletek nem nemitjak el a csengot ----
+
+def test_music_stop_does_not_cut_bell(env):
+    env.bell.play(env.wav("csengo.wav", 2.0))
+    assert wait_until(lambda: bool(env.mixer.status & MixerStatus.BELL))
+    env.music.stop()
+    assert env.mixer.file_playing
+    env.bell.stop()
+    assert not env.mixer.file_playing
+
+
+def test_music_force_waits_for_bell(env):
+    bell_end = []
+    t0 = time.time()
+    env.bell.play(env.wav("csengo.wav", 1.0), on_done=lambda err: bell_end.append(time.time()))
+    assert wait_until(lambda: env.mixer.file_playing)
+    env.music.play(env.wav("zene.wav", 0.3), blocking=True, force=True)
+    assert bell_end and bell_end[0] - t0 >= 0.8, "a force-os zene levagta a csengot"
+
+
+def test_music_force_interrupts_music(env):
+    env.music.play(env.wav("hosszu.wav", 10.0))
+    assert wait_until(env.music.is_playing)
+    t0 = time.time()
+    env.music.play(env.wav("uj.wav", 0.3), blocking=True, force=True)
+    assert time.time() - t0 < 2.0

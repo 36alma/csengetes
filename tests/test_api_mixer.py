@@ -1,6 +1,5 @@
 import os
 import sys
-import threading
 from types import SimpleNamespace
 
 import numpy as np
@@ -15,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fakes import FakeMic, wait_until
 from api import mixer as api_mixer
 from model import AudioPacket
-from services.mixer import Mixer, MixerPlayer
+from services.mixer import Mixer, MixerPlayer, PlayGate
 from services.mixer.mixing import SAMPLE_RATE
 
 
@@ -24,7 +23,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(api_mixer, "MUSIC_DIR", str(tmp_path))
     mixer = Mixer(mic=FakeMic())
     mixer.start()
-    music_player = MixerPlayer(mixer, "music", threading.Lock(), allowed_roots=[str(tmp_path)])
+    music_player = MixerPlayer(mixer, "music", PlayGate(), allowed_roots=[str(tmp_path)])
     state = {"authorized": True}
     ctx = SimpleNamespace(mixer=mixer, music_player=music_player, ws_authorized=lambda ws: state["authorized"])
     app = FastAPI()

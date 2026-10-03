@@ -19,26 +19,85 @@ MAX_VOLUME_PERCENT = 200.0
 WATCHDOG_MARGIN_S = 15.0
 MAX_PLAY_SECONDS = 6 * 3600
 
+# force=True eseten mely forrastipusokat szakit meg a kero: a csengo mindent,
+# a zene csak zenet (csengo alatt a zene megvarja a csengo veget)
+PREEMPTS = {"bell": ("bell", "music"), "music": ("music",)}
+
+
+class PlayGate:
+    """A lejatszok kozos kapuja: egyszerre egy hang szol.
+
+    acquire(force=True): elonyt kap minden nem-force-os keressel szemben (amig var
+    force-os kero, nem-force-os nem jut be), es a `preempts` tipusu aktualis
+    lejatszast megszakitja - akkor is, ha az csak a varakozas kozben indul el.
+    """
+
+    def __init__(self):
+        self._cond = threading.Condition()
+        self._held = False
+        self._force_waiting = 0
+        self._preempt: dict[str, int] = {}  # tipus -> ennyi varakozo force-os kero szakitja meg
+        self._current: tuple[str, Callable[[], None]] | None = None
+
+    def acquire(self, force: bool = False, preempts: tuple[str, ...] = ()) -> None:
+        with self._cond:
+            if not force:
+                while self._held or self._force_waiting:
+                    self._cond.wait()
+                self._held = True
+                return
+            self._force_waiting += 1
+            for kind in preempts:
+                self._preempt[kind] = self._preempt.get(kind, 0) + 1
+            try:
+                if self._current is not None and self._current[0] in preempts:
+                    self._current[1]()
+                while self._held:
+                    self._cond.wait()
+                self._held = True
+            finally:
+                self._force_waiting -= 1
+                for kind in preempts:
+                    self._preempt[kind] -= 1
+                    if not self._preempt[kind]:
+                        del self._preempt[kind]
+                self._cond.notify_all()  # a nem-force-os varakozok ujra ellenorizzenek
+
+    def attach(self, kind: str, cancel: Callable[[], None]) -> None:
+        """A kapu birtokosa bejelenti a lejatszasat; ha mar var ra megszakito kero, azonnal leall."""
+        with self._cond:
+            self._current = (kind, cancel)
+            preempted = bool(self._preempt.get(kind))
+        if preempted:
+            cancel()
+
+    def release(self) -> None:
+        with self._cond:
+            self._held = False
+            self._current = None
+            self._cond.notify_all()
+
 
 class MixerPlayer:
     """Egy hangforras (`kind`: "bell" vagy "music") lejatszoja.
 
-    A ket peldany kozos `gate`-et hasznal: egyszerre egy hang szol, a force=True
-    megszakitja a futot, a force=False megvarja a veget.
+    A ket peldany kozos `gate`-et (PlayGate) hasznal: egyszerre egy hang szol. force=True:
+    a csengo minden hangot megszakit, a zene csak zenet (a csengot megvarja); a force-os
+    kero megelozi a sorban allo nem-force-os kereseket. force=False: megvarja a veget.
     """
 
     def __init__(
         self,
         mixer: "Mixer",
         kind: str,
-        gate: threading.Lock | None = None,
+        gate: PlayGate | None = None,
         allowed_roots=None,
         max_file_bytes: int = MAX_FILE_BYTES,
         device_lister: Callable[[], list[tuple[int, str]]] = list_output_devices,
     ):
         self._mixer = mixer
         self._kind = kind
-        self._gate = gate if gate is not None else threading.Lock()
+        self._gate = gate if gate is not None else PlayGate()
         self._roots = normalize_roots(allowed_roots)
         self._max_file_bytes = max_file_bytes
         self._device_lister = device_lister
@@ -100,15 +159,16 @@ class MixerPlayer:
     # ---------- vezerles ----------
 
     def stop(self) -> None:
-        self._mixer.stop_file()
+        """Csak a sajat tipusu (bell/music) lejatszast allitja le."""
+        self._mixer.stop_file(kind=self._kind)
 
     def is_playing(self) -> bool:
+        """Szol-e barmilyen fajl a mixerben (csengo vagy zene, nem csak a sajat tipus)."""
         return self._mixer.file_playing
 
-    def _run(self, real_path: str) -> None:
-        if not self._mixer.running:
-            raise AudioPlayerError("A mixer nem fut.")
-        playback = self._mixer.play_file(real_path, self._kind)
+    def _run(self, real_path: str, samples) -> None:
+        playback = self._mixer.play_samples(samples, self._kind)
+        self._gate.attach(self._kind, lambda: self._mixer.stop_file(playback))
         timeout = min(MAX_PLAY_SECONDS, playback.duration_s + WATCHDOG_MARGIN_S)
         if not playback.done.wait(timeout):
             self._mixer.stop_file(playback)
@@ -135,10 +195,17 @@ class MixerPlayer:
             error = None
             try:
                 real_path = validate_audio_path(filepath, self._roots, self._max_file_bytes)
-                if force:
-                    self._mixer.stop_file()
-                with self._gate:
-                    self._run(real_path)
+                if not self._mixer.running:
+                    raise AudioPlayerError("A mixer nem fut.")
+                # a (lassu) dekodolas a kapun kivul: ne tartson fel egy kozben erkezo csengot
+                samples = self._mixer.decode_file(real_path)
+                self._gate.acquire(force=force, preempts=PREEMPTS[self._kind] if force else ())
+                try:
+                    if not self._mixer.running:
+                        raise AudioPlayerError("A mixer nem fut.")
+                    self._run(real_path, samples)
+                finally:
+                    self._gate.release()
                 logger.info("Lejatszas kesz: %s", real_path)
             except AudioPlayerError as exc:
                 logger.error("Hiba a lejatszas soran: %s", exc)
