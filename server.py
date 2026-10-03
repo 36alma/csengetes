@@ -20,7 +20,6 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-import audio_player
 from api import ApiContext, register_api
 from api.context import error
 from api.media import too_large_error
@@ -29,6 +28,8 @@ import schedule_store
 import scheduler as scheduler_mod
 import time_source
 from logger_setup import setup_logging
+from services.mixer import Mixer, MixerPlayer
+from services.mixer.output import open_output_stream
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MEDIA_DIR = os.path.join(BASE_DIR, "media")
@@ -47,7 +48,10 @@ _sessions: set[str] = set()
 
 DEFAULT_MAX_UPLOAD_MB = 20
 
-player = audio_player.AudioPlayer()
+mixer = Mixer(output_factory=open_output_stream)
+_play_gate = threading.Lock()  # a ket lejatszo kozos kapuja: egyszerre egy hang szol
+player = MixerPlayer(mixer, "bell", _play_gate)
+music_player = MixerPlayer(mixer, "music", _play_gate)
 time_src = time_source.TimeSource(ntp_server=config.NTP_SERVER)
 scheduler = scheduler_mod.Scheduler(time_src, player)
 
@@ -71,20 +75,6 @@ if _active_name and _active_name in schedule_store.list_schedules():
 
 def _save_config() -> None:
     config.save_config()
-
-
-_mixer = None
-_mixer_lock = threading.Lock()
-
-
-def _get_mixer():
-    # Lusta letrehozas: a Mixer mikrofon-eszkozt kerdez le, ami nelkul a szerver is elindulhat
-    global _mixer
-    with _mixer_lock:
-        if _mixer is None:
-            from services.mixer import Mixer
-            _mixer = Mixer()
-        return _mixer
 
 
 @app.middleware("http")
@@ -125,11 +115,12 @@ register_api(
     app,
     ApiContext(
         player=player,
+        music_player=music_player,
+        mixer=mixer,
         time_src=time_src,
         scheduler=scheduler,
         media_dir=MEDIA_DIR,
         save_config=_save_config,
-        get_mixer=_get_mixer,
         ws_authorized=lambda ws: ws.cookies.get(SESSION_COOKIE) in _sessions,
     ),
 )
@@ -148,6 +139,7 @@ def _run_server():
 def main():
     setup_logging()
     os.makedirs(MEDIA_DIR, exist_ok=True)
+    mixer.start()
     scheduler.start()
 
     server_thread = threading.Thread(target=_run_server, daemon=True)
@@ -175,8 +167,7 @@ def main():
 
     _uvicorn.should_exit = True
     scheduler.stop()
-    if _mixer is not None:
-        _mixer.stop()
+    mixer.stop()
 
 
 if __name__ == "__main__":

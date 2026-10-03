@@ -1,5 +1,6 @@
 import os
 import sys
+import threading
 from types import SimpleNamespace
 
 import numpy as np
@@ -11,19 +12,21 @@ from starlette.websockets import WebSocketDisconnect
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from api import mixer as api_mixer
 from fakes import FakeMic, wait_until
-from model import AudioPacket, InputDevice
-from services.mixer import Mixer
-from services.mixer.mixing import BLOCK_SIZE, SAMPLE_RATE
+from api import mixer as api_mixer
+from model import AudioPacket
+from services.mixer import Mixer, MixerPlayer
+from services.mixer.mixing import SAMPLE_RATE
 
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     monkeypatch.setattr(api_mixer, "MUSIC_DIR", str(tmp_path))
     mixer = Mixer(mic=FakeMic())
+    mixer.start()
+    music_player = MixerPlayer(mixer, "music", threading.Lock(), allowed_roots=[str(tmp_path)])
     state = {"authorized": True}
-    ctx = SimpleNamespace(get_mixer=lambda: mixer, ws_authorized=lambda ws: state["authorized"])
+    ctx = SimpleNamespace(mixer=mixer, music_player=music_player, ws_authorized=lambda ws: state["authorized"])
     app = FastAPI()
     app.include_router(api_mixer.create_router(ctx))
     yield SimpleNamespace(client=TestClient(app), mixer=mixer, state=state, music_dir=tmp_path)
@@ -32,31 +35,40 @@ def env(tmp_path, monkeypatch):
 
 def test_state_idle(env):
     data = env.client.get("/api/mixer").json()
-    assert data["running"] is False
+    assert data["running"] is True
     assert data["status"] == 0 and data["flags"] == []
     assert data["level"] == 0.0
+    assert data["mic_live"] is False and data["output_ok"] is True
     assert data["volume"] == {"master": 1.0, "music": 1.0, "mic": 1.0}
     assert data["stream"]["codec"] == "mp3"
 
 
-def test_start_stop(env):
-    assert env.client.post("/api/mixer/start").json() == {"ok": True}
-    assert env.client.get("/api/mixer").json()["running"] is True
-    env.client.post("/api/mixer/stop")
-    assert env.client.get("/api/mixer").json()["running"] is False
+def test_state_without_microphone_device(env):
+    env.mixer.mic.current_output_device = None
+    assert env.client.get("/api/mixer").json()["input"] is None
+    assert env.client.get("/api/mixer/inputs").json()["current"] is None
 
 
-def test_state_shows_signal_while_running(env):
-    import time
-    env.client.post("/api/mixer/start")
-    env.mixer.set_mic_live(True)
-    deadline = time.time() + 3
+def test_mic_toggle_shows_signal_and_flag(env):
+    assert env.client.post("/api/mixer/mic", json={"live": True}).json() == {"ok": True, "mic_live": True}
+    assert wait_until(lambda: env.client.get("/api/mixer").json()["level"] > 0.0)
     data = env.client.get("/api/mixer").json()
-    while data["level"] == 0.0 and time.time() < deadline:
-        time.sleep(0.05)
-        data = env.client.get("/api/mixer").json()
-    assert data["level"] > 0.0
-    assert "PLAYING_MIC" in data["flags"]
+    assert data["mic_live"] is True and "PLAYING_MIC" in data["flags"]
+    assert env.client.post("/api/mixer/mic", json={"live": False}).json()["mic_live"] is False
+
+
+@pytest.mark.parametrize("body", [{}, {"live": "yes"}, {"live": 1}])
+def test_mic_rejects_non_boolean(env, body):
+    assert env.client.post("/api/mixer/mic", json=body).status_code == 400
+
+
+def test_mic_failure_is_503_and_stays_off(env):
+    def broken(samplerate, blocksize):
+        raise RuntimeError("nincs mikrofon")
+
+    env.mixer.mic.start = broken
+    assert env.client.post("/api/mixer/mic", json={"live": True}).status_code == 503
+    assert env.client.get("/api/mixer").json()["mic_live"] is False
 
 
 def test_volume_partial_and_validation(env):
@@ -78,22 +90,17 @@ def test_inputs_and_switch(env):
 
 
 def test_music_path_protection_and_playback(env):
-    sf.write(env.music_dir / "dal.wav", 0.2 * np.sin(np.linspace(0, 500, SAMPLE_RATE)), SAMPLE_RATE)
+    sf.write(env.music_dir / "dal.wav", 0.2 * np.sin(np.linspace(0, 500, SAMPLE_RATE * 3)), SAMPLE_RATE)
     assert env.client.post("/api/mixer/music", json={"name": "nincs.mp3"}).status_code == 404
     assert env.client.post("/api/mixer/music", json={"name": "../server.py"}).status_code == 404
     assert env.client.post("/api/mixer/music", json={"name": "dal.wav"}).status_code == 200
-    assert env.mixer.file_playing
+    assert wait_until(lambda: env.mixer.file_playing)
+    assert wait_until(lambda: "PLAYING_MUSIC" in env.client.get("/api/mixer").json()["flags"])
     assert env.client.delete("/api/mixer/music").status_code == 200
-    assert not env.mixer.file_playing
-
-
-def test_unreadable_music_is_400(env):
-    (env.music_dir / "rossz.mp3").write_bytes(b"nem hang")
-    assert env.client.post("/api/mixer/music", json={"name": "rossz.mp3"}).status_code == 400
+    assert wait_until(lambda: not env.mixer.file_playing)
 
 
 def test_websocket_streams_numbered_packets(env):
-    env.client.post("/api/mixer/start")
     with env.client.websocket_connect("/api/mixer/stream") as ws:
         info = ws.receive_json()
         assert info["codec"] == "mp3"

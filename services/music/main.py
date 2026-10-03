@@ -10,7 +10,7 @@ from mutagen import MutagenError
 from mutagen.mp3 import MP3
 
 import config_store
-from audio_player import AudioPlayer
+from services.mixer import MixerPlayer
 from schedule_store import load_obj
 from time_source import TimeSource
 
@@ -29,7 +29,7 @@ class MusicService:
     def __init__(
         self,
         url: list[str] | None,
-        player: AudioPlayer,
+        player: MixerPlayer,
         time_src: TimeSource,
         force: bool = False,
         now_play: bool = False,

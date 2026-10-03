@@ -9,7 +9,7 @@ import shutil
 from fastapi import APIRouter, Body, File, UploadFile
 from werkzeug.utils import secure_filename
 
-import audio_player
+from services.mixer import AudioPlayerError
 from config_store import config
 
 from .context import ApiContext, error
@@ -93,7 +93,7 @@ def create_router(ctx: ApiContext) -> APIRouter:
         logger.info("Lejatszas inditva (%s), force=%s", filename, force)
         try:
             ctx.player.play(filepath, blocking=True, force=force)
-        except audio_player.AudioPlayerError as exc:
+        except AudioPlayerError as exc:
             return {"ok": False, "error": str(exc)}
         return {"ok": True}
 

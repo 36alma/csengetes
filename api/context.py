@@ -8,22 +8,22 @@ from typing import TYPE_CHECKING, Callable
 from fastapi import WebSocket
 from fastapi.responses import JSONResponse
 
-import audio_player
 import scheduler as scheduler_mod
 import time_source
 
 if TYPE_CHECKING:
-    from services.mixer import Mixer
+    from services.mixer import Mixer, MixerPlayer
 
 
 @dataclass
 class ApiContext:
-    player: audio_player.AudioPlayer
+    player: "MixerPlayer"  # csengo (ez az alap lejatszo: media, kimenet)
+    music_player: "MixerPlayer"
+    mixer: "Mixer"
     time_src: time_source.TimeSource
     scheduler: scheduler_mod.Scheduler
     media_dir: str
     save_config: Callable[[], None]
-    get_mixer: Callable[[], "Mixer"]  # lusta: a Mic() inicializalasa eszkozt kerdez le
     ws_authorized: Callable[[WebSocket], bool]  # a HTTP middleware a WebSocketre nem fut
 
 

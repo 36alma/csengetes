@@ -1,4 +1,4 @@
-"""Mixer API: allapot, vezerles es az MP3 stream WebSocketen."""
+"""Mixer API: allapot, mikrofon, hangerok, zene es az MP3 stream WebSocketen."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from fastapi import APIRouter, Body, WebSocket
 
 from model import MixerStatus
 from services.music import download as music_download
-from services.mixer.errors import AudioPlayerError
 from services.mixer.main import BITRATE_KBPS
 from services.mixer.mixing import BLOCK_SIZE, SAMPLE_RATE
 
@@ -56,6 +55,10 @@ def _same_origin(ws: WebSocket) -> bool:
     return origin is None or urlparse(origin).netloc == ws.headers.get("host")
 
 
+def _device_dict(device) -> dict | None:
+    return device.model_dump() if device is not None else None
+
+
 def create_router(ctx: ApiContext) -> APIRouter:
     router = APIRouter()
 
@@ -64,45 +67,44 @@ def create_router(ctx: ApiContext) -> APIRouter:
 
     @router.get("/api/mixer")
     def get_state():
-        mixer = ctx.get_mixer()
+        mixer = ctx.mixer
         status = mixer.get_status()
         return {
             "running": mixer.running,
             "status": status.value,
             "flags": [f.name for f in MixerStatus if f and f in status],
             "level": round(mixer.level, 3),
+            "mic_live": mixer.mic_live,
+            "output_ok": mixer.output_ok,
             "volume": volumes(mixer),
-            "input": mixer.current_output_device.model_dump(),
+            "input": _device_dict(mixer.current_output_device),
             "head": mixer.buffer.head,
             "stream": STREAM_INFO,
         }
 
-    @router.post("/api/mixer/start")
-    def start():
-        mixer = ctx.get_mixer()
+    @router.post("/api/mixer/mic")
+    def set_mic(body: dict = Body(...)):
+        live = body.get("live")
+        if not isinstance(live, bool):
+            return error("A 'live' mezo (true/false) kotelezo.")
         try:
-            mixer.start()
+            ctx.mixer.set_mic_live(live)
         except Exception:
-            logger.exception("A mixer nem indult el")
+            logger.exception("A mikrofon nem kapcsolhato")
             return error("A mikrofon nem nyithato meg.", 503)
-        return {"ok": True}
-
-    @router.post("/api/mixer/stop")
-    def stop():
-        ctx.get_mixer().stop()
-        return {"ok": True}
+        return {"ok": True, "mic_live": ctx.mixer.mic_live}
 
     @router.get("/api/mixer/inputs")
     def list_inputs():
-        mixer = ctx.get_mixer()
+        mixer = ctx.mixer
         return {
             "inputs": [d.model_dump() for d in mixer.list_inputs()],
-            "current": mixer.current_output_device.model_dump(),
+            "current": _device_dict(mixer.current_output_device),
         }
 
     @router.post("/api/mixer/input")
     def set_input(body: dict = Body(...)):
-        mixer = ctx.get_mixer()
+        mixer = ctx.mixer
         device = next((d for d in mixer.list_inputs() if d.index == body.get("index")), None)
         if device is None:
             return error("Ismeretlen bemeneti eszkoz.", 404)
@@ -115,7 +117,7 @@ def create_router(ctx: ApiContext) -> APIRouter:
 
     @router.post("/api/mixer/volume")
     def set_volume(body: dict = Body(...)):
-        mixer = ctx.get_mixer()
+        mixer = ctx.mixer
         changes = []
         for key, method in _VOLUMES:
             if key in body:
@@ -137,15 +139,17 @@ def create_router(ctx: ApiContext) -> APIRouter:
         path = _music_path(body.get("name"))
         if path is None:
             return error("A zene nem talalhato.", 404)
-        try:
-            ctx.get_mixer().play_file(path, "music")
-        except AudioPlayerError as exc:
-            return error(str(exc))
+        # a hiba (pl. olvashatatlan fajl) a naploba kerul, a lejatszas a hatterben fut
+        ctx.music_player.play(
+            path,
+            force=True,
+            on_done=lambda err, p=path: err and logger.error("Mixer zene hiba (%s): %s", os.path.basename(p), err),
+        )
         return {"ok": True}
 
     @router.delete("/api/mixer/music")
     def stop_music():
-        ctx.get_mixer().stop_file()
+        ctx.music_player.stop()
         return {"ok": True}
 
     @router.websocket("/api/mixer/stream")
@@ -153,7 +157,7 @@ def create_router(ctx: ApiContext) -> APIRouter:
         if not _same_origin(ws) or not ctx.ws_authorized(ws):
             await ws.close(code=1008)
             return
-        mixer = ctx.get_mixer()
+        mixer = ctx.mixer
         await ws.accept()
         await ws.send_json(STREAM_INFO)
 

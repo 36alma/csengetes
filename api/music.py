@@ -65,7 +65,7 @@ def create_router(ctx: ApiContext) -> APIRouter:
         return start_music(
             MusicService(
                 urls,
-                ctx.player,
+                ctx.music_player,
                 ctx.time_src,
                 force=bool(body.get("force", False)),
                 now_play=bool(body.get("now_play", False)),
@@ -85,7 +85,7 @@ def create_router(ctx: ApiContext) -> APIRouter:
         return start_music(
             MusicService(
                 None,
-                ctx.player,
+                ctx.music_player,
                 ctx.time_src,
                 force=bool(body.get("force", False)),
                 now_play=bool(body.get("now_play", False)),
@@ -111,7 +111,7 @@ def create_router(ctx: ApiContext) -> APIRouter:
         if svc is not None:
             svc.stop()
         else:
-            ctx.player.stop()
+            ctx.music_player.stop()
         return {"ok": True}
 
     @router.delete("/api/music/{name}")

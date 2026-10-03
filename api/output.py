@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Body
 
-import audio_player
+from services.mixer.player import MAX_VOLUME_PERCENT
 from config_store import config
 
 from .context import ApiContext, error
@@ -21,7 +21,7 @@ def create_router(ctx: ApiContext) -> APIRouter:
             "devices": [{"index": idx, "name": name} for idx, name in devices],
             "current": player.get_device(),
             "volume": player.get_volume(),
-            "max_volume": audio_player.MAX_VOLUME_PERCENT,
+            "max_volume": MAX_VOLUME_PERCENT,
         }
 
     @router.post("/api/output/device")
