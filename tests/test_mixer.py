@@ -15,6 +15,7 @@ from model import AudioPacket, InputDevice, MixerStatus
 from model.audio import HEADER_SIZE
 from services.mixer import Mixer, PacketBuffer
 from services.mixer.errors import AudioPlayerError
+import services.mixer.main as mixer_main
 from services.mixer.main import Playback
 from services.mixer.mixing import BLOCK_SIZE, SAMPLE_RATE, mix_blocks, split_mp3_frames
 
@@ -493,3 +494,67 @@ def test_output_lost_midway_keeps_the_stream_running():
     finally:
         mixer.stop()
     assert sink.closed and len(packets) == 20
+
+
+# ---- F5: darabolt dekodolas ----
+
+def _reference_load(path):
+    """A korabbi (egyben dekodolo, np.interp-es) load_music: osszehasonlitasi alap."""
+    data, rate = sf.read(path, dtype="float32", always_2d=True)
+    mono = data.mean(axis=1)
+    if rate != SAMPLE_RATE:
+        target = int(len(mono) * SAMPLE_RATE / rate)
+        mono = np.interp(np.linspace(0, len(mono) - 1, target), np.arange(len(mono)), mono).astype(np.float32)
+    return mono
+
+
+def _stereo_48k(tmp_path, seconds, name="sztereo.wav"):
+    path = tmp_path / name
+    t = np.arange(int(seconds * 48000)) / 48000
+    left = 0.4 * np.sin(2 * np.pi * 440 * t)
+    right = 0.3 * np.sin(2 * np.pi * 660 * t)
+    sf.write(path, np.column_stack([left, right]), 48000)
+    return str(path)
+
+
+def test_load_music_chunked_matches_reference(tmp_path):
+    path = _stereo_48k(tmp_path, 3.3)  # tobb dekodolasi darabon at
+    got = mixer_main.load_music(path)
+    ref = _reference_load(path)
+    assert got.dtype == np.float32 and got.ndim == 1
+    assert abs(len(got) - len(ref)) <= 1
+    n = min(len(got), len(ref))
+    assert np.max(np.abs(got[:n] - ref[:n])) < 1e-3
+
+
+def test_load_music_same_rate_mono_passthrough(tmp_path):
+    path = _wav(tmp_path, "a.wav", 1.7)
+    got = mixer_main.load_music(path)
+    assert got.dtype == np.float32
+    np.testing.assert_allclose(got, _reference_load(path), atol=1e-6)
+
+
+def test_load_music_peak_memory_is_bounded(tmp_path):
+    import tracemalloc
+
+    path = _stereo_48k(tmp_path, 10.0)
+    tracemalloc.start()
+    try:
+        result = mixer_main.load_music(path)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak <= 4 * result.nbytes, f"csucs {peak} bajt, eredmeny {result.nbytes} bajt"
+
+
+def test_too_long_file_rejected(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    path = _wav(tmp_path, "a.wav", 0.1)
+    seconds = mixer_main.MAX_FILE_SECONDS + 1
+    monkeypatch.setattr(mixer_main.sf, "info", lambda p: SimpleNamespace(
+        frames=seconds * 44100, samplerate=44100, duration=float(seconds), channels=1))
+    with pytest.raises(AudioPlayerError, match="tul hosszu"):
+        mixer_main.load_music(path)
+    with pytest.raises(AudioPlayerError, match="tul hosszu"):
+        Mixer(mic=FakeMic()).decode_file(path)

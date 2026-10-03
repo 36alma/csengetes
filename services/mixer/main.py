@@ -19,16 +19,57 @@ LEVEL_DECAY = 0.85  # blokkonkenti lecsengés (~26 ms): a jelszint nem ugral, de
 KIND_FLAGS = {"music": MixerStatus.PLAYING_MUSIC, "bell": MixerStatus.BELL}
 
 
+MAX_FILE_SECONDS = 2 * 3600  # ennel hosszabb fajlt nem dekodolunk (memoria)
+DECODE_BLOCK_FRAMES = 32768  # ennyi forrasmintat dekodolunk egyszerre
+
+
 def load_music(filepath: str) -> np.ndarray:
-    """Zene betoltese mono, SAMPLE_RATE-es float32 tombbe."""
-    data, rate = sf.read(filepath, dtype="float32", always_2d=True)
-    mono = data.mean(axis=1)
-    if rate != SAMPLE_RATE:
-        target = int(len(mono) * SAMPLE_RATE / rate)
-        mono = np.interp(
-            np.linspace(0, len(mono) - 1, target), np.arange(len(mono)), mono
-        ).astype(np.float32)
-    return mono
+    """Zene betoltese mono, SAMPLE_RATE-es float32 tombbe.
+
+    Darabonkent dekodol egy elore lefoglalt kimeneti tombbe, igy a csucs memoria az
+    eredmeny meretenek kis tobbszorose. Az atmintazas linearis interpolacio
+    (mint np.interp a teljes fajlon); a darabhatarokon az elozo darab utolso mintaja
+    atfedeskent megmarad, igy nincs szakadas.
+    """
+    info = sf.info(filepath)
+    if info.samplerate <= 0 or info.frames / info.samplerate > MAX_FILE_SECONDS:
+        raise AudioPlayerError("A fajl tul hosszu.")
+
+    with sf.SoundFile(filepath) as f:
+        rate, total = f.samplerate, f.frames
+        target = total if rate == SAMPLE_RATE else int(total * SAMPLE_RATE / rate)
+        out = np.empty(max(target, 0), dtype=np.float32)
+        # a j. kimeneti minta forraspozicioja: j * step (np.linspace(0, total - 1, target))
+        step = (total - 1) / (target - 1) if target > 1 else 0.0
+        filled = 0  # ennyi kimeneti minta kesz
+        base = 0  # a kovetkezo darab elso mintajanak forrasindexe
+        prev = np.empty(0, dtype=np.float32)  # atfedes: az elozo darab utolso mintaja
+        for block in f.blocks(blocksize=DECODE_BLOCK_FRAMES, dtype="float32", always_2d=True):
+            if filled >= target:
+                break
+            mono = block[:, 0] if block.shape[1] == 1 else block.mean(axis=1, dtype=np.float32)
+            if rate == SAMPLE_RATE:
+                count = min(len(mono), target - filled)
+                out[filled:filled + count] = mono[:count]
+                filled += count
+                continue
+            buf = np.concatenate([prev, mono])
+            buf_start = base - len(prev)
+            last = base + len(mono) - 1  # az eddig ismert utolso forrasindex
+            if step > 0:
+                end = min(target, int(np.floor(last / step + 1e-6)) + 1)
+            else:
+                end = min(target, 1)
+            if end > filled:
+                positions = np.arange(filled, end, dtype=np.float64) * step - buf_start
+                out[filled:end] = np.interp(positions, np.arange(len(buf)), buf)
+                filled = end
+            prev = mono[-1:].copy()
+            base += len(mono)
+    if filled < len(out):
+        # a fejlec tobb mintat igert, mint amennyi volt (pl. MP3): a vege levagva
+        out = out[:filled].copy()
+    return out
 
 
 class Playback:
