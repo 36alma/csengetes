@@ -1,7 +1,13 @@
 python-vlc
 ntplib
-flask
+fastapi
+uvicorn
+python-multipart
+werkzeug
 pywebview
 pydantic
 yt-dlp
 mutagen
+sounddevice
+soundfile
+numpy
