@@ -7,7 +7,11 @@ from model import InputDevice
 
 class Mic():
     def __init__(self):
-        self.current_output_device = InputDevice(index=sd.query_devices(kind="input")['index'],name=sd.query_devices(kind="input")['name'])
+        try:
+            info = sd.query_devices(kind="input")
+            self.current_output_device = InputDevice(index=info['index'], name=info['name'])
+        except (sd.PortAudioError, ValueError):
+            self.current_output_device = None  # nincs mikrofon: a mixer enelkul is fut
         self._volume = 1.0
         self._stream: sd.InputStream | None = None
         self._blocks: queue.Queue[np.ndarray] = queue.Queue(maxsize=8)
@@ -36,6 +40,8 @@ class Mic():
 
     def start(self, samplerate: int, blocksize: int):
         """Mono mikrofonfelvetel inditasa; a blokkok a read_block()-kal olvashatok."""
+        if self.current_output_device is None:
+            raise RuntimeError("Nincs elerheto mikrofon.")
         self.stop()
         self._stream = sd.InputStream(
             samplerate=samplerate,
