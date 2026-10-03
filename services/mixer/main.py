@@ -60,6 +60,7 @@ class Mixer():
         self._file_lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._mic_live = False
 
     @property
     def current_output_device(self):
@@ -71,7 +72,7 @@ class Mixer():
 
     def change_output_device(self,new_device:InputDevice):
         self.mic.setoutputdevices(new_device)
-        if self.running:
+        if self._mic_live:
             self.mic.start(SAMPLE_RATE, BLOCK_SIZE)
 
     def change_volume(self,volume:float):
@@ -100,6 +101,21 @@ class Mixer():
     @property
     def file_playing(self) -> bool:
         return self._playback is not None
+
+    @property
+    def mic_live(self) -> bool:
+        return self._mic_live
+
+    def set_mic_live(self, live: bool) -> None:
+        """Mikrofon be/ki: kikapcsolva a mikrofonfolyam sincs megnyitva."""
+        live = bool(live)
+        if live == self._mic_live:
+            return
+        if live:
+            self.mic.start(SAMPLE_RATE, BLOCK_SIZE)
+        else:
+            self.mic.stop()
+        self._mic_live = live
 
     def play_file(self, filepath: str, kind: str) -> Playback:
         """Dekodolja es forraskent beallitja a fajlt; a korabbi lejatszast megszakitja."""
@@ -134,7 +150,6 @@ class Mixer():
         if self.running:
             return
         self._stop.clear()
-        self.mic.start(SAMPLE_RATE, BLOCK_SIZE)
         self._thread = threading.Thread(target=self._run, name="mixer", daemon=True)
         self._thread.start()
 
@@ -143,7 +158,7 @@ class Mixer():
         if self._thread is not None:
             self._thread.join()
             self._thread = None
-        self.mic.stop()
+        self.set_mic_live(False)
         self.stop_file()
         self.status = MixerStatus.IDLE
         self.level = 0.0
@@ -175,7 +190,7 @@ class Mixer():
         next_tick = time.monotonic()
         while not self._stop.is_set():
             music, file_flag = self._next_file_block()
-            mic = self.mic.read_block()
+            mic = self.mic.read_block() if self._mic_live else None
 
             status = file_flag
             if mic is not None and self.mic_volume > 0.0:

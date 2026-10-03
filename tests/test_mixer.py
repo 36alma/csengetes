@@ -119,6 +119,7 @@ def _collect(buf, count, timeout=3.0):
 
 def test_mixer_emits_numbered_mp3_frames():
     mixer = Mixer(mic=FakeMic())
+    mixer.set_mic_live(True)
     mixer.start()
     try:
         packets = _collect(mixer.buffer, 12)
@@ -138,6 +139,7 @@ def test_mixer_music_sets_mixing_status(tmp_path):
     sf.write(wav, 0.2 * np.sin(np.linspace(0, 2000, SAMPLE_RATE)), 22050)  # mas mintavetel, resample
     mixer = Mixer(mic=FakeMic())
     mixer.play_file(str(wav), "music")
+    mixer.set_mic_live(True)
     mixer.start()
     try:
         packets = _collect(mixer.buffer, 12)
@@ -159,6 +161,7 @@ def test_mixer_volume_validation():
 def test_mixer_level_follows_signal_and_resets():
     mixer = Mixer(mic=FakeMic())
     assert mixer.level == 0.0
+    mixer.set_mic_live(True)
     mixer.start()
     try:
         _collect(mixer.buffer, 6)
@@ -250,3 +253,61 @@ def test_bell_ignores_music_volume(tmp_path):
         assert _peak_level(mixer, 0.3) < 0.01
     finally:
         mixer.stop()
+
+
+def test_mic_is_off_by_default_and_not_mixed():
+    mixer = Mixer(mic=FakeMic())
+    assert mixer.mic_live is False
+    mixer.start()
+    try:
+        packets = _collect(mixer.buffer, 6)
+        assert not any(p.status & MixerStatus.PLAYING_MIC for p in packets)
+        assert mixer.level < 0.01
+    finally:
+        mixer.stop()
+
+
+def test_mic_live_toggle_opens_and_closes_stream():
+    class SpyMic(FakeMic):
+        def __init__(self):
+            super().__init__()
+            self.events = []
+
+        def start(self, samplerate, blocksize):
+            self.events.append("start")
+
+        def stop(self):
+            self.events.append("stop")
+
+    mic = SpyMic()
+    mixer = Mixer(mic=mic)
+    mixer.set_mic_live(True)
+    assert mixer.mic_live and mic.events == ["start"]
+    mixer.set_mic_live(True)  # ismetelt bekapcsolas nem nyit ujra
+    assert mic.events == ["start"]
+    mixer.set_mic_live(False)
+    assert not mixer.mic_live and mic.events == ["start", "stop"]
+
+
+def test_mic_live_failure_keeps_it_off():
+    class BrokenMic(FakeMic):
+        def start(self, samplerate, blocksize):
+            raise RuntimeError("nincs mikrofon")
+
+    mixer = Mixer(mic=BrokenMic())
+    with pytest.raises(RuntimeError):
+        mixer.set_mic_live(True)
+    assert mixer.mic_live is False
+
+
+def test_mic_live_mixes_microphone():
+    mixer = Mixer(mic=FakeMic())
+    mixer.set_mic_live(True)
+    mixer.start()
+    try:
+        packets = _collect(mixer.buffer, 6)
+        assert any(p.status & MixerStatus.PLAYING_MIC for p in packets)
+        assert wait_until(lambda: mixer.level > 0.2)
+    finally:
+        mixer.stop()
+    assert mixer.mic_live is False

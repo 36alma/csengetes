@@ -49,6 +49,7 @@ def test_start_stop(env):
 def test_state_shows_signal_while_running(env):
     import time
     env.client.post("/api/mixer/start")
+    env.mixer.set_mic_live(True)
     deadline = time.time() + 3
     data = env.client.get("/api/mixer").json()
     while data["level"] == 0.0 and time.time() < deadline:
