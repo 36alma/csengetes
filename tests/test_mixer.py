@@ -496,6 +496,101 @@ def test_output_lost_midway_keeps_the_stream_running():
     assert sink.closed and len(packets) == 20
 
 
+# ---- F6: a helyi kimenet magatol visszaall ----
+
+def _flaky_factory(failures, message="nincs eszkoz"):
+    """Az elso `failures` hivas OSError-t dob, utana FakeSink-et ad."""
+    calls, sinks = [], []
+
+    def factory(index):
+        calls.append(index)
+        if len(calls) <= failures:
+            raise OSError(message)
+        sinks.append(FakeSink())
+        return sinks[-1]
+
+    return factory, calls, sinks
+
+
+def test_output_retry_recovers_after_failure(monkeypatch, caplog):
+    monkeypatch.setattr(mixer_main, "OUTPUT_RETRY_S", 0.05)
+    factory, calls, sinks = _flaky_factory(failures=3)
+    mixer = Mixer(mic=FakeMic(), output_factory=factory)
+    with caplog.at_level(logging.ERROR, logger="csengetes"):
+        mixer.start()
+        try:
+            assert wait_until(lambda: mixer.output_ok is True and sinks and len(sinks[0].blocks) >= 3)
+            packets = _collect(mixer.buffer, 6)
+        finally:
+            mixer.stop()
+    assert len(calls) == 4 and len(packets) == 6
+    opened_errors = [r for r in caplog.records if "nem nyithato meg" in r.getMessage()]
+    assert len(opened_errors) == 1, [r.getMessage() for r in opened_errors]
+
+
+def test_output_retry_does_not_spam_log(monkeypatch, caplog):
+    monkeypatch.setattr(mixer_main, "OUTPUT_RETRY_S", 0.02)
+    factory, calls, _ = _flaky_factory(failures=10**6)
+    mixer = Mixer(mic=FakeMic(), output_factory=factory)
+    with caplog.at_level(logging.ERROR, logger="csengetes"):
+        mixer.start()
+        try:
+            assert wait_until(lambda: len(calls) >= 5)
+            assert mixer.output_ok is False
+        finally:
+            mixer.stop()
+    opened_errors = [r for r in caplog.records if "nem nyithato meg" in r.getMessage()]
+    assert len(opened_errors) == 1
+
+
+def test_output_retry_waits_for_the_interval(monkeypatch):
+    monkeypatch.setattr(mixer_main, "OUTPUT_RETRY_S", 60.0)
+    factory, calls, _ = _flaky_factory(failures=10**6)
+    mixer = Mixer(mic=FakeMic(), output_factory=factory)
+    mixer.start()
+    try:
+        _collect(mixer.buffer, 10)  # a stream fut, de az intervallumon belul nincs ujraprobalkozas
+    finally:
+        mixer.stop()
+    assert len(calls) == 1
+
+
+def test_output_retry_after_midway_loss(monkeypatch):
+    monkeypatch.setattr(mixer_main, "OUTPUT_RETRY_S", 0.05)
+    sinks = [FakeSink(fail_after=2), FakeSink()]
+    opened = []
+
+    def factory(index):
+        opened.append(sinks[len(opened)])
+        return opened[-1]
+
+    mixer = Mixer(mic=FakeMic(), output_factory=factory)
+    mixer.start()
+    try:
+        assert wait_until(lambda: len(sinks[1].blocks) >= 3)
+        assert mixer.output_ok is True
+    finally:
+        mixer.stop()
+    assert sinks[0].closed
+
+
+def test_output_device_set_before_start_opens_once():
+    calls = []
+
+    def factory(index):
+        calls.append(index)
+        return FakeSink()
+
+    mixer = Mixer(mic=FakeMic(), output_factory=factory)
+    mixer.set_output_device(2)  # mint a server.py: az eszkoz a start() elott kerul beallitasra
+    mixer.start()
+    try:
+        _collect(mixer.buffer, 6)
+    finally:
+        mixer.stop()
+    assert calls == [2]
+
+
 # ---- F5: darabolt dekodolas ----
 
 def _reference_load(path):

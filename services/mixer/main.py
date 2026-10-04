@@ -17,6 +17,7 @@ logger = logging.getLogger("csengetes")
 BITRATE_KBPS = 128
 LEVEL_DECAY = 0.85  # blokkonkenti lecsengés (~26 ms): a jelszint nem ugral, de gyorsan elhal
 KIND_FLAGS = {"music": MixerStatus.PLAYING_MUSIC, "bell": MixerStatus.BELL}
+OUTPUT_RETRY_S = 5.0  # kiesett/meg nem nyithato helyi kimenet ujraprobalasa ennyi masodpercenkent
 
 
 MAX_FILE_SECONDS = 2 * 3600  # ennel hosszabb fajlt nem dekodolunk (memoria)
@@ -107,6 +108,7 @@ class Mixer():
         self.output_device_index: int | None = None  # None = rendszer alapertelmezett
         self.output_ok = True
         self._output_dirty = threading.Event()
+        self._last_output_error: tuple | None = None  # az utoljara naplozott megnyitasi hiba
 
     @property
     def current_output_device(self):
@@ -157,14 +159,26 @@ class Mixer():
         self._output_dirty.set()
 
     def _open_sink(self):
+        """A kimeneti folyam megnyitasa; hiba eseten None.
+
+        Ugyanazt a (valtozatlan) hibat csak egyszer naplozza, hogy az ujraprobalkozas
+        ne tomje a naplot.
+        """
         if self._output_factory is None:
             return None
+        index = self.output_device_index
         try:
-            sink = self._output_factory(self.output_device_index)
+            sink = self._output_factory(index)
         except Exception as exc:
-            logger.error("A kimeneti eszkoz nem nyithato meg (%s): %s", self.output_device_index, exc)
+            error = (index, type(exc).__name__, str(exc))
+            if error != self._last_output_error:
+                logger.error("A kimeneti eszkoz nem nyithato meg (%s): %s", index, exc)
+                self._last_output_error = error
             self.output_ok = False
             return None
+        if self._last_output_error is not None:
+            logger.info("A kimeneti eszkoz ujra elerheto (%s)", index)
+            self._last_output_error = None
         self.output_ok = True
         return sink
 
@@ -295,7 +309,10 @@ class Mixer():
         encoder.set_channels(1)
         encoder.set_quality(2)
 
+        # a start() elott beallitott eszkozt (set_output_device) mar ez a megnyitas kezeli
+        self._output_dirty.clear()
         sink = self._open_sink()
+        next_retry = time.monotonic() + OUTPUT_RETRY_S
         pending = b""
         packets = 0
         next_tick = time.monotonic()
@@ -304,8 +321,15 @@ class Mixer():
                 try:
                     if self._output_dirty.is_set():
                         self._output_dirty.clear()
+                        self._last_output_error = None  # kezi valtas: a hiba ujra naplozhato
                         self._close_sink(sink)
                         sink = self._open_sink()
+                        next_retry = time.monotonic() + OUTPUT_RETRY_S
+                        next_tick = time.monotonic()
+                    elif sink is None and self._output_factory is not None and time.monotonic() >= next_retry:
+                        # automatikus ujranyitas (nincs visszaeses az alapertelmezett eszkozre)
+                        sink = self._open_sink()
+                        next_retry = time.monotonic() + OUTPUT_RETRY_S
                         next_tick = time.monotonic()
 
                     music, file_flag = self._next_file_block()
@@ -331,6 +355,7 @@ class Mixer():
                             self.output_ok = False
                             self._close_sink(sink)
                             sink = None
+                            next_retry = time.monotonic() + OUTPUT_RETRY_S
 
                     frames, pending = split_mp3_frames(pending + encoder.encode(pcm.tobytes()))
                     for frame in frames:
