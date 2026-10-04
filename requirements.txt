@@ -8,6 +8,6 @@ pydantic
 yt-dlp
 mutagen
 sounddevice
-soundfile
+soundfile>=0.12.1
 numpy
 lameenc
