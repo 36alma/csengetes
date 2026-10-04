@@ -591,6 +591,49 @@ def test_output_device_set_before_start_opens_once():
     assert calls == [2]
 
 
+# ---- minor: Mixer.stop() mindig visszaall ----
+
+def test_stop_resets_state_even_if_mic_stop_raises(tmp_path):
+    class BadStopMic(FakeMic):
+        def stop(self):
+            raise RuntimeError("mikrofon leallitasi hiba")
+
+    mixer = Mixer(mic=BadStopMic())
+    mixer.set_mic_live(True)
+    mixer.start()
+    playback = mixer.play_file(_wav(tmp_path, "csengo.wav", 5.0), "bell")
+    assert wait_until(lambda: mixer.status & MixerStatus.BELL and mixer.level > 0)
+    with pytest.raises(RuntimeError):
+        mixer.stop()
+    assert not mixer.running
+    assert mixer.status == MixerStatus.IDLE and mixer.level == 0.0
+    assert playback.done.is_set() and not mixer.file_playing
+
+
+def test_stop_does_not_hang_on_stuck_thread(caplog):
+    class StuckSink(FakeSink):
+        def __init__(self):
+            super().__init__()
+            self.entered, self.release = threading.Event(), threading.Event()
+
+        def write(self, pcm):
+            self.entered.set()
+            self.release.wait(10)
+
+    sink = StuckSink()
+    mixer = Mixer(mic=FakeMic(), output_factory=lambda index: sink)
+    mixer.start()
+    assert sink.entered.wait(2)
+    t0 = time.time()
+    with caplog.at_level(logging.WARNING, logger="csengetes"):
+        mixer.stop()
+    assert time.time() - t0 < 4.0
+    assert any("nem allt le" in r.getMessage() for r in caplog.records)
+    assert mixer.status == MixerStatus.IDLE and mixer.level == 0.0
+    sink.release.set()
+    assert wait_until(lambda: not mixer.running)
+
+
 # ---- F5: darabolt dekodolas ----
 
 def _reference_load(path):

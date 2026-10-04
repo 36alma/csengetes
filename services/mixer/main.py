@@ -278,14 +278,24 @@ class Mixer():
         self._thread.start()
 
     def stop(self):
+        """A keveroszal leallitasa; a lejatszas, az allapot es a jelszint mindenkepp visszaall.
+
+        Ha a szal 2 mp alatt sem all le, figyelmeztetes es tovabblepes; a referenciat
+        megtartjuk, hogy egy ujabb start() ne inditson masodik keveroszalat mellette.
+        """
         self._stop.set()
-        if self._thread is not None:
-            self._thread.join()
-            self._thread = None
-        self.set_mic_live(False)
-        self.stop_file()
-        self.status = MixerStatus.IDLE
-        self.level = 0.0
+        try:
+            if self._thread is not None:
+                self._thread.join(timeout=2)
+                if self._thread.is_alive():
+                    logger.warning("A keveroszal nem allt le 2 mp alatt, tovabblepes")
+                else:
+                    self._thread = None
+            self.set_mic_live(False)
+        finally:
+            self.stop_file()
+            self.status = MixerStatus.IDLE
+            self.level = 0.0
 
     def _next_file_block(self) -> tuple[np.ndarray | None, MixerStatus]:
         with self._file_lock:
