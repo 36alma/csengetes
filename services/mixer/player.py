@@ -18,6 +18,9 @@ logger = logging.getLogger("csengetes")
 MAX_VOLUME_PERCENT = 200.0
 WATCHDOG_MARGIN_S = 15.0
 MAX_PLAY_SECONDS = 6 * 3600
+# egy lejatszon egyszerre ennyi keres lehet folyamatban (dekodol / a kapura var / szol): minden
+# varakozo keres egy szalat es a teljes dekodolt fajlt tartja a memoriaban; a tobbit elutasitjuk
+MAX_PENDING_PLAYS = 4
 
 # force=True eseten mely forrastipusokat szakit meg a kero: a csengo mindent,
 # a zene csak zenet (csengo alatt a zene megvarja a csengo veget)
@@ -101,6 +104,8 @@ class MixerPlayer:
         self._roots = normalize_roots(allowed_roots)
         self._max_file_bytes = max_file_bytes
         self._device_lister = device_lister
+        self._pending = 0  # folyamatban levo play() keresek (MAX_PENDING_PLAYS korlat)
+        self._pending_lock = threading.Lock()
 
     # ---------- eszkozok ----------
 
@@ -189,7 +194,22 @@ class MixerPlayer:
         force=True: eloszor megszakitja a folyamatban levo hangot; force=False: megvarja a veget.
         on_done(error: str | None): a lejatszas vegen (siker vagy hiba eseten is) hivodik a
         lejatszo szalon. Ha nincs on_done, a hiba AudioPlayerError-kent kivetelt dob.
+        Egy lejatszon legfeljebb MAX_PENDING_PLAYS keres lehet folyamatban; a tobbit azonnal
+        elutasitja (szal es dekodolas nelkul). A force-os csengot sosem utasitja el.
         """
+        limited = not (force and self._kind == "bell")
+        if limited:
+            with self._pending_lock:
+                full = self._pending >= MAX_PENDING_PLAYS
+                if not full:
+                    self._pending += 1
+            if full:
+                error = "Tul sok varakozo lejatszas."
+                logger.error("Hiba a lejatszas soran: %s (%s)", error, filepath)
+                if on_done is not None:
+                    on_done(error)
+                    return
+                raise AudioPlayerError(error)
 
         def _do_play():
             error = None
@@ -214,6 +234,9 @@ class MixerPlayer:
                 logger.error("Varatlan hiba a lejatszas soran (%s): %s", filepath, exc)
                 error = "Lejatszasi hiba."
             finally:
+                if limited:
+                    with self._pending_lock:
+                        self._pending -= 1
                 if on_done is not None:
                     on_done(error)
             if error is not None and on_done is None:
@@ -222,4 +245,10 @@ class MixerPlayer:
         if blocking:
             _do_play()
         else:
-            threading.Thread(target=_do_play, daemon=True).start()
+            try:
+                threading.Thread(target=_do_play, daemon=True).start()
+            except BaseException:
+                if limited:  # a szal el sem indult: a helyet itt kell visszaadni
+                    with self._pending_lock:
+                        self._pending -= 1
+                raise

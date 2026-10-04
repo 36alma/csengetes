@@ -233,3 +233,33 @@ def test_music_force_interrupts_music(env):
     t0 = time.time()
     env.music.play(env.wav("uj.wav", 0.3), blocking=True, force=True)
     assert time.time() - t0 < 2.0
+
+
+# ---- a sorban allo lejatszasok szama korlatos (eroforras-kimerules ellen) ----
+
+def test_pending_plays_are_bounded_but_forced_bell_is_never_rejected(env):
+    from services.mixer.player import MAX_PENDING_PLAYS
+
+    env.music.play(env.wav("zene1.wav", 10.0))  # a kaput tartja
+    assert wait_until(env.music.is_playing)
+    path = env.wav("zene2.wav", 0.2)
+    results = []
+    extra = 5
+    for _ in range(MAX_PENDING_PLAYS - 1 + extra):  # a szolo zene mar egy helyet foglal
+        env.music.play(path, on_done=results.append)
+    # a korlaton feluli keresek azonnal (dekodolas es varakozo szal nelkul) elutasitva
+    rejected = [r for r in results if r and "Tul sok" in r]
+    assert len(rejected) == extra, results
+    with pytest.raises(AudioPlayerError):
+        env.music.play(path, blocking=True)
+
+    bell_result = []
+    bell_done = threading.Event()
+    env.bell.play(env.wav("csengo.wav", 0.2), force=True,
+                  on_done=lambda err: (bell_result.append(err), bell_done.set()))
+    assert bell_done.wait(3) and bell_result == [None]
+
+    # a sorban allok lejatszodnak, utana a helyek felszabadulnak
+    assert wait_until(lambda: len(results) == MAX_PENDING_PLAYS - 1 + extra, timeout=5)
+    assert results.count(None) == MAX_PENDING_PLAYS - 1
+    env.music.play(path, blocking=True)
