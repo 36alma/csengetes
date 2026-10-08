@@ -1,4 +1,4 @@
-from .audit import log_event
+from .audit import log_event, log_expiring
 from .auth import Decision, check, parse_bearer
 from .presence import Presence
 from .store import (
@@ -23,5 +23,6 @@ __all__ = [
     "DeviceStore",
     "hash_token",
     "log_event",
+    "log_expiring",
     "normalize_ip",
 ]

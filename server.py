@@ -28,6 +28,8 @@ import schedule_store
 import scheduler as scheduler_mod
 import time_source
 from logger_setup import setup_logging
+from device_server import DeviceServer
+from services.devices import DeviceStore, Presence, log_expiring
 from services.mixer import Mixer, MixerPlayer, PlayGate
 from services.mixer.output import open_output_stream
 
@@ -41,6 +43,8 @@ app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 HOST = "127.0.0.1"
 PORT = 8765
+DEVICE_HOST = "0.0.0.0"  # az eszkozport a halozatra nyilik; csak a hang-stream van rajta
+EXPIRY_CHECK_SECONDS = 24 * 3600
 SESSION_COOKIE = "csengetes_session"
 
 AUTH_TOKEN = secrets.token_urlsafe(32)
@@ -54,6 +58,18 @@ player = MixerPlayer(mixer, "bell", _play_gate)
 music_player = MixerPlayer(mixer, "music", _play_gate)
 time_src = time_source.TimeSource(ntp_server=config.NTP_SERVER)
 scheduler = scheduler_mod.Scheduler(time_src, player)
+devices = DeviceStore(token_days=config.DEVICE_TOKEN_DAYS)
+presence = Presence()
+device_server = DeviceServer(mixer, devices, presence, DEVICE_HOST, config.DEVICE_PORT)
+_stop_expiry = threading.Event()
+
+
+def _expiry_watch() -> None:
+    while True:
+        log_expiring(devices)
+        if _stop_expiry.wait(EXPIRY_CHECK_SECONDS):
+            return
+
 
 # Az eszkozt nev alapjan keressuk meg (az index eszkozvaltozasnal elcsuszhat)
 if config.DEVICE_NAME:
@@ -122,6 +138,8 @@ register_api(
         media_dir=MEDIA_DIR,
         save_config=_save_config,
         ws_authorized=lambda ws: ws.cookies.get(SESSION_COOKIE) in _sessions,
+        devices=devices,
+        presence=presence,
     ),
 )
 
@@ -141,6 +159,8 @@ def main():
     os.makedirs(MEDIA_DIR, exist_ok=True)
     mixer.start()
     scheduler.start()
+    device_server.start()  # hiba (pl. foglalt port) eseten naplozza, az admin felulet igy is elindul
+    threading.Thread(target=_expiry_watch, daemon=True).start()
 
     server_thread = threading.Thread(target=_run_server, daemon=True)
     server_thread.start()
@@ -166,6 +186,8 @@ def main():
         server_thread.join()
 
     _uvicorn.should_exit = True
+    _stop_expiry.set()
+    device_server.stop()
     scheduler.stop()
     mixer.stop()
 
