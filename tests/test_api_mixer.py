@@ -123,3 +123,32 @@ def test_websocket_rejects_unauthorized(env):
     with pytest.raises(WebSocketDisconnect):
         with env.client.websocket_connect("/api/mixer/stream"):
             pass
+
+
+def test_stream_audio_stops_when_keep_going_turns_false(env):
+    from fastapi import WebSocket
+
+    outcome = {}
+    app = FastAPI()
+
+    @app.websocket("/s")
+    async def s(ws: WebSocket):
+        count = {"n": 0}
+
+        def keep_going():
+            count["n"] += 1
+            return count["n"] <= 3
+
+        outcome["result"] = await api_mixer.stream_audio(ws, env.mixer, keep_going)
+
+    client = TestClient(app)
+    received = 0
+    with client.websocket_connect("/s") as ws:
+        assert ws.receive_json()["codec"] == "mp3"
+        with pytest.raises(WebSocketDisconnect) as exc:
+            while True:
+                ws.receive_bytes()
+                received += 1
+    assert exc.value.code == 1008
+    assert 1 <= received <= 3
+    assert outcome["result"] == "revoked"

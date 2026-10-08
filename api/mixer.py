@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from typing import Callable
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Body, WebSocket
@@ -57,6 +58,43 @@ def _same_origin(ws: WebSocket) -> bool:
 
 def _device_dict(device) -> dict | None:
     return device.model_dump() if device is not None else None
+
+
+async def stream_audio(ws: WebSocket, mixer, keep_going: Callable[[], bool] = lambda: True) -> str:
+    """Elfogadja a WebSocketet es az MP3 csomagokat kuldi, amig a kliens el vagy keep_going() igaz.
+
+    "revoked"-et ad vissza (es 1008-cal zar), ha keep_going() hamis lett; kulonben "closed"-ot.
+    """
+    await ws.accept()
+    await ws.send_json(STREAM_INFO)
+
+    async def wait_for_disconnect():
+        while (await ws.receive())["type"] != "websocket.disconnect":
+            pass
+
+    disconnected = asyncio.create_task(wait_for_disconnect())
+    position = mixer.buffer.head  # mint egy radio: onnan hallgat, ahol a stream tart
+    result = "closed"
+    try:
+        while not disconnected.done():
+            if not keep_going():
+                result = "revoked"
+                break
+            item = await asyncio.to_thread(mixer.buffer.read, position, 1.0)
+            if item is None:
+                continue
+            packet, position = item
+            await ws.send_bytes(packet.to_bytes())
+    except Exception:
+        pass  # a kliens eltunt kuldes kozben
+    finally:
+        disconnected.cancel()
+    if result == "revoked":
+        try:
+            await ws.close(code=1008)
+        except Exception:
+            pass
+    return result
 
 
 def create_router(ctx: ApiContext) -> APIRouter:
@@ -157,26 +195,6 @@ def create_router(ctx: ApiContext) -> APIRouter:
         if not _same_origin(ws) or not ctx.ws_authorized(ws):
             await ws.close(code=1008)
             return
-        mixer = ctx.mixer
-        await ws.accept()
-        await ws.send_json(STREAM_INFO)
-
-        async def wait_for_disconnect():
-            while (await ws.receive())["type"] != "websocket.disconnect":
-                pass
-
-        disconnected = asyncio.create_task(wait_for_disconnect())
-        position = mixer.buffer.head  # mint egy radio: onnan hallgat, ahol a stream tart
-        try:
-            while not disconnected.done():
-                item = await asyncio.to_thread(mixer.buffer.read, position, 1.0)
-                if item is None:
-                    continue
-                packet, position = item
-                await ws.send_bytes(packet.to_bytes())
-        except Exception:
-            pass  # a kliens eltunt kuldes kozben
-        finally:
-            disconnected.cancel()
+        await stream_audio(ws, ctx.mixer)
 
     return router
