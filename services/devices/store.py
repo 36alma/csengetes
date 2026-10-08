@@ -120,7 +120,7 @@ class DeviceStore:
 
     # ---------- olvasas ----------
 
-    def _now(self) -> int:
+    def now(self) -> int:
         return int(self._clock())
 
     def list(self) -> list[Device]:
@@ -159,11 +159,11 @@ class DeviceStore:
                 device is not None
                 and device.enabled
                 and hmac.compare_digest(device.token_hash, token_hash)
-                and self._now() < device.token_expires_at
+                and self.now() < device.token_expires_at
             )
 
     def expiring(self, within_days: int = 14) -> list[Device]:
-        limit = self._now() + within_days * 86400
+        limit = self.now() + within_days * 86400
         with self._lock:
             return [d.model_copy() for d in self._devices if d.enabled and d.token_expires_at <= limit]
 
@@ -179,7 +179,7 @@ class DeviceStore:
 
     def _new_token(self) -> tuple[str, str, int]:
         token = secrets.token_urlsafe(32)
-        return token, hash_token(token), self._now() + self._token_days * 86400
+        return token, hash_token(token), self.now() + self._token_days * 86400
 
     def create(self, name: str, ip_address: str, *, mac_address=None, hostname=None, version=None) -> tuple[Device, str]:
         name = _clean_text(name, "name", required=True)
@@ -197,7 +197,7 @@ class DeviceStore:
                 ip_address=ip,
                 token_hash=digest,
                 token_expires_at=expires,
-                created_at=self._now(),
+                created_at=self.now(),
                 **optional,
             )
             self._devices.append(device)
@@ -257,5 +257,5 @@ class DeviceStore:
             device = self._find(device_id)
             if device is None:
                 return
-            device.last_seen = self._now()
+            device.last_seen = self.now()
             self._save()

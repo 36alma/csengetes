@@ -12,6 +12,7 @@ import scheduler as scheduler_mod
 import time_source
 
 if TYPE_CHECKING:
+    from services.devices import DeviceStore, Presence
     from services.mixer import Mixer, MixerPlayer
 
 
@@ -25,6 +26,8 @@ class ApiContext:
     media_dir: str
     save_config: Callable[[], None]
     ws_authorized: Callable[[WebSocket], bool]  # a HTTP middleware a WebSocketre nem fut
+    devices: "DeviceStore"
+    presence: "Presence"
 
 
 def error(message: str, status: int = 400) -> JSONResponse:
