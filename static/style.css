@@ -483,3 +483,15 @@ html, body {
 .volume-value { font-size: 13px; color: var(--text-muted); text-align: right; font-variant-numeric: tabular-nums; }
 
 #panel-mixer .form-card .form-row + .form-row { margin-top: 12px; }
+
+.devices-table td:first-child { width: auto; }
+.devices-table td, .devices-table th { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.devices-table tbody tr { cursor: default; }
+.devices-table .actions { display: flex; gap: 6px; }
+.devices-table .actions .btn { padding: 4px 10px; font-size: 12px; }
+.status-pill { font-weight: 600; }
+.status-pill[data-status="connected"] { color: var(--success-text); }
+.status-pill[data-status="offline"] { color: var(--text-muted); }
+.status-pill[data-status="disabled"] { color: var(--text-faint); }
+.status-pill[data-status="expired"] { color: var(--danger-text); }
+.expiring-soon { color: var(--warning); font-weight: 600; }

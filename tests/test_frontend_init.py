@@ -32,7 +32,7 @@ def test_app_js_syntax():
 def test_init_without_microphone_still_loads_everything(tmp_path):
     result = _run(tmp_path, {"/api/mixer/inputs": {"inputs": [], "current": None}})
     fetched = result["fetched"]
-    for path in ("/api/media", "/api/schedules", "/api/time", "/api/output/devices", "/api/logs?limit=300"):
+    for path in ("/api/media", "/api/schedules", "/api/time", "/api/output/devices", "/api/logs?limit=300", "/api/devices"):
         assert path in fetched, f"{path} nem toltodott be: {fetched}"
     assert result["unhandled"] == []
     assert result["inputOptions"] == [{"text": "Nincs mikrofon", "disabled": True}]
@@ -43,4 +43,11 @@ def test_init_survives_failing_loader(tmp_path):
     result = _run(tmp_path, {"/api/mixer/inputs": {"inputs": [{"index": 1, "name": "m"}], "current": None},
                              "/api/music": None})
     assert "/api/logs?limit=300" in result["fetched"]
+    assert result["unhandled"] == []
+
+
+def test_init_loads_devices_and_survives_odd_responses(tmp_path):
+    result = _run(tmp_path, {"/api/devices": None, "/api/logs?limit=1000": None})
+    assert "/api/devices" in result["fetched"]
+    assert "/api/logs?limit=1000" in result["fetched"]
     assert result["unhandled"] == []

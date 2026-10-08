@@ -30,6 +30,7 @@
     <button class="tab" data-tab="music">Zene</button>
     <button class="tab" data-tab="time">Idő</button>
     <button class="tab" data-tab="output">Kimenet</button>
+    <button class="tab" data-tab="devices">Eszközök</button>
     <button class="tab" data-tab="log">Napló</button>
   </div>
 
@@ -265,6 +266,40 @@
       </div>
     </section>
 
+    <!-- Eszkozok -->
+    <section class="panel" id="panel-devices">
+      <div class="form-card">
+        <div class="form-row">
+          <span class="field-label bold">Eszköz neve</span>
+          <input class="input" id="deviceName" type="text" maxlength="64" placeholder="pl. Aula ESP32" style="width:200px">
+          <span class="field-label bold">IP-cím</span>
+          <input class="input" id="deviceIp" type="text" placeholder="192.168.1.50" style="width:150px">
+          <button class="btn btn-primary" id="btnDeviceSave">Hozzáadás</button>
+          <button class="btn btn-ghost" id="btnDeviceCancel" style="display:none">Mégse</button>
+        </div>
+        <div class="form-row">
+          <span class="field-label">MAC (nem kötelező)</span>
+          <input class="input" id="deviceMac" type="text" maxlength="64" style="width:150px">
+          <span class="field-label">Hostname</span>
+          <input class="input" id="deviceHostname" type="text" maxlength="64" style="width:150px">
+          <span class="field-label">Verzió</span>
+          <input class="input" id="deviceVersion" type="text" maxlength="64" style="width:100px">
+        </div>
+        <div class="edit-hint" id="deviceEditHint"></div>
+      </div>
+
+      <div class="table-card">
+        <table class="table devices-table">
+          <thead>
+            <tr><th>Név</th><th>IP-cím</th><th>Állapot</th><th>Token lejár</th><th>Utolsó kapcsolat</th><th>Műveletek</th></tr>
+          </thead>
+          <tbody id="devicesBody"></tbody>
+        </table>
+      </div>
+
+      <pre class="log-box" id="deviceLogBox" style="min-height:140px; max-height:200px"></pre>
+    </section>
+
     <!-- Naplo -->
     <section class="panel" id="panel-log">
       <pre class="log-box" id="logBox"></pre>
@@ -289,6 +324,18 @@
     <div class="modal-actions">
       <button class="btn btn-ghost" id="modalCancel">Mégse</button>
       <button class="btn btn-primary" id="modalOk">OK</button>
+    </div>
+  </div>
+</div>
+
+<div class="alert-overlay modal-overlay" id="tokenOverlay">
+  <div class="alert-box modal-box" role="dialog" aria-modal="true" aria-labelledby="tokenDeviceName">
+    <div class="alert-title" id="tokenDeviceName"></div>
+    <div class="alert-detail">Ez a token csak most látható. Másold ki, és állítsd be az eszközön; bezárás után nem kérhető le újra.</div>
+    <input class="input modal-input" id="tokenValue" type="text" readonly>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btnTokenCopy">Másolás</button>
+      <button class="btn btn-primary" id="btnTokenClose">Bezárás</button>
     </div>
   </div>
 </div>
