@@ -6,6 +6,7 @@ Bearer-tokennel es regisztralt IP-rol.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 import time
@@ -34,11 +35,14 @@ def create_app(mixer, store: DeviceStore, presence: Presence) -> FastAPI:
             return
         device = decision.device
         started = time.time()
-        presence.enter(device.id)
-        store.touch(device.id)
-        log_event(device.name, "connected", ip=client_ip)
         reason = "closed"
+        presence.enter(device.id)
         try:
+            try:
+                await asyncio.to_thread(store.touch, device.id)  # fajliras: ne blokkolja az esemenyhurkot
+            except Exception:
+                logger.warning("A last_seen frissitese nem sikerult (%s).", device.name)
+            log_event(device.name, "connected", ip=client_ip)
             reason = await stream_audio(ws, mixer, lambda: store.is_current(device.id, device.token_hash))
         finally:
             presence.leave(device.id)
@@ -52,7 +56,9 @@ class DeviceServer:
         self._host = host
         self._port = port
         self._uvicorn = uvicorn.Server(
-            uvicorn.Config(create_app(mixer, store, presence), host=host, port=port, log_level="warning")
+            # proxy_headers=False: az X-Forwarded-For-t nem vesszuk figyelembe, a kliens IP-je a socket cime
+            uvicorn.Config(create_app(mixer, store, presence), host=host, port=port, log_level="warning",
+                           proxy_headers=False)
         )
         self._thread: threading.Thread | None = None
 

@@ -156,6 +156,7 @@ def _run_server():
 
 def main():
     setup_logging()
+    devices.replay_load_warnings()  # a devices.json betoltese a naplo beallitasa elott tortent
     os.makedirs(MEDIA_DIR, exist_ok=True)
     mixer.start()
     scheduler.start()

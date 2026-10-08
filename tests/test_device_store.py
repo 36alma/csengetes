@@ -180,7 +180,7 @@ def test_corrupt_file_fails_closed_and_warns(tmp_path, clock, caplog, content):
 def test_bad_entries_skipped_good_kept(tmp_path, clock, caplog):
     good = {
         "id": "d_1", "name": "Jo", "ip_address": "10.0.0.5", "enabled": True,
-        "token_hash": "h", "token_expires_at": 9_999_999, "created_at": 1,
+        "token_hash": hash_token("h"), "token_expires_at": 9_999_999, "created_at": 1,
     }
     path = tmp_path / "devices.json"
     path.write_text(json.dumps([good, {"id": "d_2"}, "szoveg", 5]), encoding="utf-8")

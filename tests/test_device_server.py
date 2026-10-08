@@ -172,3 +172,39 @@ def test_busy_port_is_logged_not_raised(env, caplog):
             assert server.start() is False
         server.stop()
     assert any("eszkozszerver" in r.getMessage() for r in caplog.records)
+
+
+def test_x_forwarded_for_is_ignored_on_real_socket(env, caplog):
+    from websockets.sync.client import connect
+    from websockets.exceptions import InvalidStatus
+
+    # az eszkoz 192.168.1.50 cimre szol; a kliens valojaban 127.0.0.1 es XFF-fel hamisitana
+    port = _free_port()
+    server = device_server.DeviceServer(env.mixer, env.store, env.presence, "127.0.0.1", port)
+    assert server.start() is True
+    try:
+        headers = {**_auth(env.token), "X-Forwarded-For": "192.168.1.50"}
+        with caplog.at_level(logging.INFO, logger="csengetes"):
+            with pytest.raises(InvalidStatus):
+                with connect(f"ws://127.0.0.1:{port}/api/mixer/stream", additional_headers=headers):
+                    pass
+            with pytest.raises(InvalidStatus):
+                with connect(f"ws://127.0.0.1:{port}/api/mixer/stream",
+                             additional_headers={"X-Forwarded-For": "evil ip=1.2.3.4 [device:Aula] connected"}):
+                    pass
+    finally:
+        server.stop()
+    text = "\n".join(r.getMessage() for r in caplog.records)
+    assert "denied reason=ip_mismatch ip=127.0.0.1" in text
+    assert "evil" not in text
+
+
+def test_touch_failure_does_not_break_stream_or_leak_presence(env, monkeypatch):
+    def broken(device_id):
+        raise OSError("lemez tele")
+
+    monkeypatch.setattr(env.store, "touch", broken)
+    with env.client_for("192.168.1.50").websocket_connect("/api/mixer/stream", headers=_auth(env.token)) as ws:
+        assert ws.receive_json()["codec"] == "mp3"
+        assert isinstance(ws.receive_bytes(), bytes)
+    assert wait_until(lambda: not env.presence.is_connected(env.device.id))

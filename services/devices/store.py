@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import secrets
+import shutil
 import tempfile
 import threading
 import time
@@ -24,6 +25,7 @@ logger = logging.getLogger("csengetes")
 DEVICES_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "devices.json")
 
 _TEXT_RE = re.compile(r"^[^\x00-\x1f\x7f]{1,64}$")  # vezerlokarakter a naploba kerulne
+_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 _UPDATABLE = {"name", "ip_address", "enabled", "mac_address", "hostname", "version"}
 _OPTIONAL = ("mac_address", "hostname", "version")
 
@@ -63,6 +65,26 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def _is_clean_text(value: str) -> bool:
+    # az isprintable() a sortoreseket (U+0085, U+2028/9), a format-karaktereket es a surrogate-eket is kiszuri
+    return bool(_TEXT_RE.match(value)) and value.isprintable()
+
+
+def _loaded_problem(device: Device) -> str | None:
+    """Betoltott bejegyzes ellenorzese ugyanazokkal a szabalyokkal, mint a create/update."""
+    if not _HASH_RE.match(device.token_hash):
+        return "token_hash"
+    if not _is_clean_text(device.name):
+        return "name"
+    if normalize_ip(device.ip_address) != device.ip_address:
+        return "ip_address"
+    for field in _OPTIONAL:
+        value = getattr(device, field)
+        if value is not None and not _is_clean_text(value):
+            return field
+    return None
+
+
 def _clean_text(value: object, field: str, required: bool) -> str | None:
     if value is None and not required:
         return None
@@ -71,7 +93,7 @@ def _clean_text(value: object, field: str, required: bool) -> str | None:
     value = value.strip()
     if not value and not required:
         return None
-    if not _TEXT_RE.match(value):
+    if not _is_clean_text(value):
         raise DeviceInvalid(f"Ervenytelen '{field}' mezo (1-64 karakter, vezerlokarakter nelkul).")
     return value
 
@@ -82,9 +104,20 @@ class DeviceStore:
         self._token_days = token_days
         self._clock = clock
         self._lock = threading.RLock()
+        self.load_warnings: list[str] = []  # a naplozas beallitasa elotti figyelmeztetesek (lasd replay_load_warnings)
+        self._needs_backup = False  # a betoltes nem a teljes fajlt vette at: iras elott mentes kell
         self._devices: list[Device] = self._load()
 
     # ---------- betoltes / mentes ----------
+
+    def _warn(self, message: str) -> None:
+        self.load_warnings.append(message)
+        logger.warning(message)
+
+    def replay_load_warnings(self) -> None:
+        """A betoltes figyelmeztetesei ujra a naploba (a szerver a naplo beallitasa utan hivja)."""
+        for message in self.load_warnings:
+            logger.warning(message)
 
     def _load(self) -> list[Device]:
         if not os.path.isfile(self._path):
@@ -92,21 +125,47 @@ class DeviceStore:
         try:
             with open(self._path, "r", encoding="utf-8") as fh:
                 raw = json.load(fh)
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):  # ValueError: JSONDecodeError es UnicodeDecodeError is
             raw = None
         if not isinstance(raw, list):
-            logger.warning("A devices.json serult vagy nem lista: nincs engedelyezett eszkoz.")
+            self._needs_backup = True
+            self._warn("A devices.json serult vagy nem lista: nincs engedelyezett eszkoz.")
             return []
         devices: list[Device] = []
         for item in raw:
             try:
-                devices.append(Device.model_validate(item))
+                device = Device.model_validate(item)
             except Exception:
-                logger.warning("A devices.json egy bejegyzese ervenytelen, kihagyva.")
+                device, problem = None, "mezok"
+            else:
+                problem = _loaded_problem(device)
+                if problem is None:
+                    if any(d.id == device.id for d in devices):
+                        problem = "id (duplikalt)"
+                    elif any(d.ip_address == device.ip_address for d in devices):
+                        problem = "ip_address (duplikalt)"
+                    elif any(d.token_hash == device.token_hash for d in devices):
+                        problem = "token_hash (duplikalt)"
+            if problem is not None:
+                self._needs_backup = True
+                self._warn(f"A devices.json egy bejegyzese ervenytelen ({problem}), kihagyva.")
+                continue
+            devices.append(device)
         return devices
 
-    def _save(self) -> None:
-        data = [d.model_dump() for d in self._devices]
+    def _backup_original(self) -> None:
+        """A serult/reszben betoltott fajlt az elso iras elott megorizzuk (kulonben az iras eltorolne)."""
+        if not self._needs_backup or not os.path.isfile(self._path):
+            return
+        stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(self.now()))
+        backup = f"{self._path}.corrupt-{stamp}"
+        shutil.copy2(self._path, backup)  # ha ez hibazik, az iras sem tortenik meg
+        self._needs_backup = False
+        logger.warning("A betoltetlen devices.json tartalma elmentve: %s", backup)
+
+    def _save(self, devices: list[Device]) -> None:
+        self._backup_original()
+        data = [d.model_dump() for d in devices]
         directory = os.path.dirname(self._path) or "."
         fd, tmp = tempfile.mkstemp(dir=directory, prefix=".devices-", suffix=".tmp")
         try:
@@ -117,6 +176,14 @@ class DeviceStore:
             if os.path.exists(tmp):
                 os.remove(tmp)
             raise
+
+    def _commit(self, devices: list[Device]) -> None:
+        """Eloszor mentes, csak siker eseten csereli a memoriabeli listat (hiba eseten nincs felig-allapot)."""
+        self._save(devices)
+        self._devices = devices
+
+    def _replace(self, updated: Device) -> list[Device]:
+        return [updated if d.id == updated.id else d for d in self._devices]
 
     # ---------- olvasas ----------
 
@@ -148,7 +215,7 @@ class DeviceStore:
         with self._lock:
             match = None
             for device in self._devices:  # vegigmegy mindenen: az idozites ne arulkodjon
-                if hmac.compare_digest(device.token_hash, digest):
+                if hmac.compare_digest(device.token_hash.encode(), digest.encode()):
                     match = device
             return match.model_copy() if match else None
 
@@ -158,7 +225,7 @@ class DeviceStore:
             return (
                 device is not None
                 and device.enabled
-                and hmac.compare_digest(device.token_hash, token_hash)
+                and hmac.compare_digest(device.token_hash.encode(), token_hash.encode())
                 and self.now() < device.token_expires_at
             )
 
@@ -200,8 +267,7 @@ class DeviceStore:
                 created_at=self.now(),
                 **optional,
             )
-            self._devices.append(device)
-            self._save()
+            self._commit(self._devices + [device])
             log_event(device.name, "created", ip=device.ip_address)
             return device.model_copy(), token
 
@@ -223,32 +289,28 @@ class DeviceStore:
             for key in _OPTIONAL:
                 if key in fields:
                     changes[key] = _clean_text(fields[key], key, False)
-            old_enabled = device.enabled
-            for key, value in changes.items():
-                setattr(device, key, value)
-            self._save()
-            if "enabled" in changes and changes["enabled"] != old_enabled:
-                log_event(device.name, "enabled" if device.enabled else "disabled")
+            updated = device.model_copy(update=changes)
+            self._commit(self._replace(updated))
+            if "enabled" in changes and changes["enabled"] != device.enabled:
+                log_event(updated.name, "enabled" if updated.enabled else "disabled")
             other = sorted(k for k in changes if k != "enabled")
             if other:
-                log_event(device.name, "updated", fields=",".join(other))
-            return device.model_copy()
+                log_event(updated.name, "updated", fields=",".join(other))
+            return updated.model_copy()
 
     def rotate(self, device_id: str) -> tuple[Device, str]:
         with self._lock:
             device = self._require(device_id)
             token, digest, expires = self._new_token()
-            device.token_hash = digest
-            device.token_expires_at = expires
-            self._save()
-            log_event(device.name, "rotated")
-            return device.model_copy(), token
+            updated = device.model_copy(update={"token_hash": digest, "token_expires_at": expires})
+            self._commit(self._replace(updated))
+            log_event(updated.name, "rotated")
+            return updated.model_copy(), token
 
     def delete(self, device_id: str) -> Device:
         with self._lock:
             device = self._require(device_id)
-            self._devices.remove(device)
-            self._save()
+            self._commit([d for d in self._devices if d.id != device.id])
             log_event(device.name, "deleted")
             return device
 
@@ -257,5 +319,7 @@ class DeviceStore:
             device = self._find(device_id)
             if device is None:
                 return
-            device.last_seen = self.now()
-            self._save()
+            try:
+                self._commit(self._replace(device.model_copy(update={"last_seen": self.now()})))
+            except Exception as exc:  # az utolso kapcsolat csak tajekoztato: ne buktasson kapcsolatot
+                logger.warning("A last_seen nem menthet: %s", exc)
