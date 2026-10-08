@@ -1,4 +1,6 @@
 from .audit import log_event
+from .auth import Decision, check, parse_bearer
+from .presence import Presence
 from .store import (
     DeviceConflict,
     DeviceError,
@@ -10,6 +12,10 @@ from .store import (
 )
 
 __all__ = [
+    "Decision",
+    "Presence",
+    "check",
+    "parse_bearer",
     "DeviceConflict",
     "DeviceError",
     "DeviceInvalid",
