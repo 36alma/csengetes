@@ -20,6 +20,8 @@ class Config():
         self.DEFAULT_MEDIA_FILE = str(self.setvalue("default_media_file","csengo.mp3"))
         self.NTP_SERVER = str(self.setvalue("ntp_server","time.google.com"))
         self.MAX_UPLOAD_MB = float(self.setvalue("max_upload_mb",20.0))
+        self.DEVICE_PORT = int(self.setvalue("device_port",8766))
+        self.DEVICE_TOKEN_DAYS = int(self.setvalue("device_token_days",90))
 
     def setvalue(self,key:str,default:Any):
         try:
@@ -46,6 +48,8 @@ class Config():
             "default_media_file": self.DEFAULT_MEDIA_FILE,
             "ntp_server": self.NTP_SERVER,
             "max_upload_mb": self.MAX_UPLOAD_MB,
+            "device_port": self.DEVICE_PORT,
+            "device_token_days": self.DEVICE_TOKEN_DAYS,
         }
         with open(CONFIG_PATH, "w", encoding="utf-8") as fh:
             json.dump(data, fh, ensure_ascii=False, indent=2) 

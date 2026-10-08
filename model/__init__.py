@@ -5,7 +5,9 @@ from .time import TimeModel
 from .input import InputDevice
 from .mixer import MixerStatus
 from .audio import AudioPacket
+from .device import Device
 __all__ = [
+    "Device",
     "Event",
     "Music",
     "Rend",
