@@ -65,6 +65,34 @@ def create_router(ctx: ApiContext) -> APIRouter:
             return fail(exc)
         return {"device": view(device), "token": token}
 
+    @router.get("/api/devices/pending")
+    def list_pending():
+        enrollment = ctx.enrollment
+        return {
+            "enabled": enrollment is not None and enrollment.enabled,
+            "pending": enrollment.list() if enrollment is not None else [],
+        }
+
+    @router.post("/api/devices/pending/{uuid}/approve")
+    def approve_pending(uuid: str, body=Body(...)):
+        if not isinstance(body, dict) or ctx.enrollment is None:
+            return error("Ervenytelen kerestartalom.")
+        try:
+            device, token = ctx.enrollment.approve(uuid, body.get("name"))
+        except (DeviceInvalid, DeviceConflict, DeviceNotFound) as exc:
+            return fail(exc)
+        return {"device": view(device), "token": token}
+
+    @router.delete("/api/devices/pending/{uuid}")
+    def dismiss_pending(uuid: str):
+        if ctx.enrollment is None:
+            return error("Ismeretlen jelentkezo.", 404)
+        try:
+            ctx.enrollment.dismiss(uuid)
+        except DeviceNotFound as exc:
+            return fail(exc)
+        return {"ok": True}
+
     @router.patch("/api/devices/{device_id}")
     def update_device(device_id: str, body=Body(...)):
         if not isinstance(body, dict):
