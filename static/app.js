@@ -697,9 +697,65 @@ function renderDevices(devices) {
   });
 }
 
+const PENDING_CONFLICT_TEXT = {
+  ip_changed: "Ütközés: más IP-ről is jelentkezett",
+  uuid_known: "Ütközés: ez az UUID már felvett eszköz, más IP-ről",
+  ip_taken: "Ütközés: az IP-cím már foglalt",
+};
+
+async function approvePending(entry) {
+  const name = await modal.prompt(`Eszköz neve (${entry.ip_address}):`, { title: "Eszköz felvétele", placeholder: "pl. Aula ESP32" });
+  if (!name) return;
+  const result = await post(`/api/devices/pending/${entry.uuid}/approve`, { name: name.trim() });
+  if (!result || result.error) return showError((result && result.error) || "Ismeretlen hiba");
+  showToken(result.device.name, result.token);
+  await loadDevices();
+  await loadDeviceLog();
+}
+
+async function dismissPending(entry) {
+  const result = await api(`/api/devices/pending/${entry.uuid}`, { method: "DELETE" });
+  if (!result || result.error) return showError((result && result.error) || "Ismeretlen hiba");
+  await loadDevices();
+}
+
+function renderPending(data) {
+  const pending = (data && data.pending) || [];
+  document.getElementById("pendingHint").hidden = !data || data.enabled !== false;
+  document.getElementById("pendingCard").hidden = pending.length === 0;
+  const body = document.getElementById("pendingBody");
+  body.innerHTML = "";
+  pending.forEach((entry, index) => {
+    const tr = document.createElement("tr");
+    if (index % 2) tr.className = "alt";
+    const cell = (text) => {
+      const td = document.createElement("td");
+      td.textContent = text;
+      tr.appendChild(td);
+      return td;
+    };
+    cell(entry.uuid);
+    cell(entry.ip_address);
+    cell(entry.version || "-");
+    cell(formatDeviceTime(entry.last_seen));
+    const status = cell(entry.conflict ? PENDING_CONFLICT_TEXT[entry.conflict] || "Ütközés" : "Jóváhagyásra vár");
+    status.className = "status-pill";
+    status.dataset.status = entry.conflict ? "expired" : "offline";
+    const td = document.createElement("td");
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    if (!entry.conflict) actions.appendChild(deviceActionButton("Felvétel", "btn-primary", () => approvePending(entry)));
+    actions.appendChild(deviceActionButton("Elvetés", "btn-ghost", () => dismissPending(entry)));
+    td.appendChild(actions);
+    tr.appendChild(td);
+    body.appendChild(tr);
+  });
+}
+
 async function loadDevices() {
   const data = await get("/api/devices");
   renderDevices((data && data.devices) || []);
+  renderPending(await get("/api/devices/pending"));
 }
 
 async function loadDeviceLog() {

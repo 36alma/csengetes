@@ -288,6 +288,17 @@
         <div class="edit-hint" id="deviceEditHint"></div>
       </div>
 
+      <div class="table-card" id="pendingCard" hidden>
+        <div class="field-label bold" style="padding:8px 12px">Jelentkezett, jóváhagyásra vár</div>
+        <table class="table devices-table">
+          <thead>
+            <tr><th>UUID</th><th>IP-cím</th><th>Verzió</th><th>Utoljára látva</th><th>Állapot</th><th>Műveletek</th></tr>
+          </thead>
+          <tbody id="pendingBody"></tbody>
+        </table>
+      </div>
+      <div class="edit-hint" id="pendingHint" hidden>Az eszköz-jelentkezés ki van kapcsolva: állítsd be az enroll_key értéket a config.json-ban (min. 16 karakter).</div>
+
       <div class="table-card">
         <table class="table devices-table">
           <thead>
