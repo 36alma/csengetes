@@ -29,7 +29,7 @@ import scheduler as scheduler_mod
 import time_source
 from logger_setup import setup_logging
 from device_server import DeviceServer
-from services.devices import DeviceStore, Presence, log_expiring
+from services.devices import DeviceStore, EnrollListener, Enrollment, Presence, log_expiring
 from services.mixer import Mixer, MixerPlayer, PlayGate
 from services.mixer.output import open_output_stream
 
@@ -61,6 +61,8 @@ scheduler = scheduler_mod.Scheduler(time_src, player)
 devices = DeviceStore(token_days=config.DEVICE_TOKEN_DAYS)
 presence = Presence()
 device_server = DeviceServer(mixer, devices, presence, DEVICE_HOST, config.DEVICE_PORT)
+enrollment = Enrollment(devices, config.ENROLL_KEY, config.ENROLL_CIDR)
+enroll_listener = EnrollListener(enrollment, DEVICE_HOST, config.ENROLL_PORT)
 _stop_expiry = threading.Event()
 
 
@@ -140,6 +142,7 @@ register_api(
         ws_authorized=lambda ws: ws.cookies.get(SESSION_COOKIE) in _sessions,
         devices=devices,
         presence=presence,
+        enrollment=enrollment,
     ),
 )
 
@@ -160,6 +163,7 @@ def main():
     os.makedirs(MEDIA_DIR, exist_ok=True)
     mixer.start()
     scheduler.start()
+    enroll_listener.start()
     device_server.start()  # hiba (pl. foglalt port) eseten naplozza, az admin felulet igy is elindul
     threading.Thread(target=_expiry_watch, daemon=True).start()
 
@@ -188,6 +192,7 @@ def main():
 
     _uvicorn.should_exit = True
     _stop_expiry.set()
+    enroll_listener.stop()
     device_server.stop()
     scheduler.stop()
     mixer.stop()
