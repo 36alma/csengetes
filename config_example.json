@@ -7,5 +7,8 @@
   "ntp_server": "pool.ntp.org",
   "max_upload_mb": 20.0,
   "device_port": 8766,
-  "device_token_days": 90
+  "device_token_days": 90,
+  "enroll_key": "",
+  "enroll_cidr": "",
+  "enroll_port": 8767
 }

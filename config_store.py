@@ -22,6 +22,9 @@ class Config():
         self.MAX_UPLOAD_MB = float(self.setvalue("max_upload_mb",20.0))
         self.DEVICE_PORT = int(self.setvalue("device_port",8766))
         self.DEVICE_TOKEN_DAYS = int(self.setvalue("device_token_days",90))
+        self.ENROLL_KEY = str(self.setvalue("enroll_key",""))
+        self.ENROLL_CIDR = str(self.setvalue("enroll_cidr",""))
+        self.ENROLL_PORT = int(self.setvalue("enroll_port",8767))
 
     def setvalue(self,key:str,default:Any):
         try:
@@ -50,6 +53,9 @@ class Config():
             "max_upload_mb": self.MAX_UPLOAD_MB,
             "device_port": self.DEVICE_PORT,
             "device_token_days": self.DEVICE_TOKEN_DAYS,
+            "enroll_key": self.ENROLL_KEY,
+            "enroll_cidr": self.ENROLL_CIDR,
+            "enroll_port": self.ENROLL_PORT,
         }
         with open(CONFIG_PATH, "w", encoding="utf-8") as fh:
             json.dump(data, fh, ensure_ascii=False, indent=2) 
