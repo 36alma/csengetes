@@ -15,3 +15,4 @@ class Device(BaseModel):
     mac_address: str | None = None
     hostname: str | None = None
     version: str | None = None
+    uuid: str | None = Field(default=None, description="A kliens altal adott v5 UUID (jelentkezeskor)")
