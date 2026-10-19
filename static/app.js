@@ -550,6 +550,250 @@ async function loadLogs() {
 
 setInterval(loadLogs, 2000);
 
+// ---------- Eszkozok ful ----------
+
+const DEVICE_STATUS_TEXT = {
+  connected: "Csatlakozva",
+  offline: "Nincs kapcsolat",
+  disabled: "Letiltva",
+  expired: "Lejárt token",
+};
+
+let editingDeviceId = null;
+
+function formatDeviceTime(epoch) {
+  if (!epoch) return "-";
+  return new Date(epoch * 1000).toLocaleString("hu-HU");
+}
+
+function deviceFields() {
+  return {
+    name: document.getElementById("deviceName").value.trim(),
+    ip_address: document.getElementById("deviceIp").value.trim(),
+    mac_address: document.getElementById("deviceMac").value.trim() || null,
+    hostname: document.getElementById("deviceHostname").value.trim() || null,
+    version: document.getElementById("deviceVersion").value.trim() || null,
+  };
+}
+
+function resetDeviceForm() {
+  editingDeviceId = null;
+  for (const id of ["deviceName", "deviceIp", "deviceMac", "deviceHostname", "deviceVersion"]) {
+    document.getElementById(id).value = "";
+  }
+  document.getElementById("btnDeviceSave").textContent = "Hozzáadás";
+  document.getElementById("btnDeviceCancel").style.display = "none";
+  document.getElementById("deviceEditHint").textContent = "";
+}
+
+function startEditDevice(device) {
+  editingDeviceId = device.id;
+  document.getElementById("deviceName").value = device.name;
+  document.getElementById("deviceIp").value = device.ip_address;
+  document.getElementById("deviceMac").value = device.mac_address || "";
+  document.getElementById("deviceHostname").value = device.hostname || "";
+  document.getElementById("deviceVersion").value = device.version || "";
+  document.getElementById("btnDeviceSave").textContent = "Mentés";
+  document.getElementById("btnDeviceCancel").style.display = "";
+  document.getElementById("deviceEditHint").textContent = "Szerkesztés: " + device.name;
+}
+
+function showToken(deviceName, token) {
+  document.getElementById("tokenDeviceName").textContent = "Új token: " + deviceName;
+  document.getElementById("tokenValue").value = token;
+  document.getElementById("tokenOverlay").classList.add("visible");
+  document.getElementById("tokenValue").select();
+}
+
+function closeToken() {
+  document.getElementById("tokenValue").value = "";
+  document.getElementById("tokenOverlay").classList.remove("visible");
+}
+
+document.getElementById("btnTokenClose").addEventListener("click", closeToken);
+document.getElementById("btnTokenCopy").addEventListener("click", async () => {
+  const input = document.getElementById("tokenValue");
+  try {
+    await navigator.clipboard.writeText(input.value);
+  } catch (e) {
+    input.select();
+    document.execCommand("copy");
+  }
+});
+
+function deviceActionButton(label, cls, handler) {
+  const btn = document.createElement("button");
+  btn.className = "btn " + cls;
+  btn.textContent = label;
+  btn.addEventListener("click", handler);
+  return btn;
+}
+
+async function rotateDevice(device) {
+  const ok = await modal.confirm(
+    `Új tokent kap: ${device.name}. A régi token azonnal érvénytelen, a futó kapcsolat megszakad, az eszközt újra be kell állítani.`,
+    { title: "Token rotálása", okText: "Rotálás", danger: true }
+  );
+  if (!ok) return;
+  const result = await post(`/api/devices/${device.id}/rotate`);
+  if (!result || result.error) return showError((result && result.error) || "Ismeretlen hiba");
+  showToken(device.name, result.token);
+  await loadDevices();
+}
+
+async function toggleDevice(device) {
+  const result = await api(`/api/devices/${device.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled: !device.enabled }),
+  });
+  if (!result || result.error) return showError((result && result.error) || "Ismeretlen hiba");
+  await loadDevices();
+}
+
+async function deleteDevice(device) {
+  const ok = await modal.confirm(`Törlöd az eszközt: ${device.name}? A futó kapcsolata megszakad.`, {
+    title: "Eszköz törlése",
+    okText: "Törlés",
+    danger: true,
+  });
+  if (!ok) return;
+  const result = await api(`/api/devices/${device.id}`, { method: "DELETE" });
+  if (!result || result.error) return showError((result && result.error) || "Ismeretlen hiba");
+  if (editingDeviceId === device.id) resetDeviceForm();
+  await loadDevices();
+}
+
+function renderDevices(devices) {
+  const body = document.getElementById("devicesBody");
+  body.innerHTML = "";
+  devices.forEach((device, index) => {
+    const tr = document.createElement("tr");
+    if (index % 2) tr.className = "alt";
+    const cell = (text) => {
+      const td = document.createElement("td");
+      td.textContent = text;
+      tr.appendChild(td);
+      return td;
+    };
+    cell(device.name);
+    cell(device.ip_address);
+    const status = cell(DEVICE_STATUS_TEXT[device.status] || device.status);
+    status.className = "status-pill";
+    status.dataset.status = device.status;
+    const soon = device.expiring_soon && device.status !== "expired";
+    const expires = cell(formatDeviceTime(device.token_expires_at) + (soon ? " (hamarosan lejár)" : ""));
+    if (device.expiring_soon) expires.className = "expiring-soon";
+    cell(formatDeviceTime(device.last_seen));
+    const td = document.createElement("td");
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    actions.appendChild(deviceActionButton("Szerkesztés", "btn-ghost", () => startEditDevice(device)));
+    actions.appendChild(deviceActionButton(device.enabled ? "Letiltás" : "Engedélyezés", "btn-ghost", () => toggleDevice(device)));
+    actions.appendChild(deviceActionButton("Token rotálása", "btn-ghost", () => rotateDevice(device)));
+    actions.appendChild(deviceActionButton("Törlés", "btn-danger", () => deleteDevice(device)));
+    td.appendChild(actions);
+    tr.appendChild(td);
+    body.appendChild(tr);
+  });
+}
+
+const PENDING_CONFLICT_TEXT = {
+  ip_changed: "Ütközés: más IP-ről is jelentkezett",
+  uuid_known: "Ütközés: ez az UUID már felvett eszköz, más IP-ről",
+  ip_taken: "Ütközés: az IP-cím már foglalt",
+};
+
+async function approvePending(entry) {
+  const name = await modal.prompt(`Eszköz neve (${entry.ip_address}):`, { title: "Eszköz felvétele", placeholder: "pl. Aula ESP32" });
+  if (!name) return;
+  const result = await post(`/api/devices/pending/${entry.uuid}/approve`, { name: name.trim() });
+  if (!result || result.error) return showError((result && result.error) || "Ismeretlen hiba");
+  showToken(result.device.name, result.token);
+  await loadDevices();
+  await loadDeviceLog();
+}
+
+async function dismissPending(entry) {
+  const result = await api(`/api/devices/pending/${entry.uuid}`, { method: "DELETE" });
+  if (!result || result.error) return showError((result && result.error) || "Ismeretlen hiba");
+  await loadDevices();
+}
+
+function renderPending(data) {
+  const pending = (data && data.pending) || [];
+  document.getElementById("pendingHint").hidden = !data || data.enabled !== false;
+  document.getElementById("pendingCard").hidden = pending.length === 0;
+  const body = document.getElementById("pendingBody");
+  body.innerHTML = "";
+  pending.forEach((entry, index) => {
+    const tr = document.createElement("tr");
+    if (index % 2) tr.className = "alt";
+    const cell = (text) => {
+      const td = document.createElement("td");
+      td.textContent = text;
+      tr.appendChild(td);
+      return td;
+    };
+    cell(entry.uuid);
+    cell(entry.ip_address);
+    cell(entry.version || "-");
+    cell(formatDeviceTime(entry.last_seen));
+    const status = cell(entry.conflict ? PENDING_CONFLICT_TEXT[entry.conflict] || "Ütközés" : "Jóváhagyásra vár");
+    status.className = "status-pill";
+    status.dataset.status = entry.conflict ? "expired" : "offline";
+    const td = document.createElement("td");
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    if (!entry.conflict) actions.appendChild(deviceActionButton("Felvétel", "btn-primary", () => approvePending(entry)));
+    actions.appendChild(deviceActionButton("Elvetés", "btn-ghost", () => dismissPending(entry)));
+    td.appendChild(actions);
+    tr.appendChild(td);
+    body.appendChild(tr);
+  });
+}
+
+async function loadDevices() {
+  const data = await get("/api/devices");
+  renderDevices((data && data.devices) || []);
+  renderPending(await get("/api/devices/pending"));
+}
+
+async function loadDeviceLog() {
+  const data = await get("/api/logs?limit=1000");
+  const lines = ((data && data.lines) || []).filter((line) => line.includes("[device:"));
+  const box = document.getElementById("deviceLogBox");
+  const wasAtBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
+  box.textContent = lines.slice(-200).join("\n");
+  if (wasAtBottom) box.scrollTop = box.scrollHeight;
+}
+
+document.getElementById("btnDeviceSave").addEventListener("click", async () => {
+  const fields = deviceFields();
+  const result = editingDeviceId
+    ? await api(`/api/devices/${editingDeviceId}`, { method: "PATCH", body: JSON.stringify(fields) })
+    : await post("/api/devices", fields);
+  if (!result || result.error) return showError((result && result.error) || "Ismeretlen hiba");
+  const created = !editingDeviceId;
+  resetDeviceForm();
+  if (created) showToken(result.device.name, result.token);
+  await loadDevices();
+  await loadDeviceLog();
+});
+
+document.getElementById("btnDeviceCancel").addEventListener("click", resetDeviceForm);
+
+document.querySelector('.tab[data-tab="devices"]').addEventListener("click", () => {
+  loadDevices();
+  loadDeviceLog();
+});
+
+setInterval(() => {
+  if (document.getElementById("panel-devices").classList.contains("active")) {
+    loadDevices();
+    loadDeviceLog();
+  }
+}, 4000);
+
 // ---------- zene (YouTube) ----------
 
 const MUSIC_STATUS_TEXT = {
@@ -662,18 +906,201 @@ setInterval(() => {
   if (document.getElementById("panel-music").classList.contains("active")) loadMusicStatus();
 }, 2000);
 
+// ---------- Mixer ful ----------
+// A felulet csak azt mutatja, hogy van-e jel es mi szol (zene, mikrofon);
+// a belso mukodes (csomagok, buffer, stream) szandekosan nem latszik.
+
+const SIGNAL_ON = 0.03;   // efelett "Van jel"
+const SIGNAL_OFF = 0.015; // ez alatt "Nincs jel" (hiszterezis, hogy ne villogjon)
+let mixerHasSignal = false;
+const mixerVolumeDebounce = {};
+
+const MIXER_VOLUMES = [
+  { key: "master", slider: "mixerVolMaster", label: "mixerVolMasterVal" },
+  { key: "music", slider: "mixerVolMusic", label: "mixerVolMusicVal" },
+  { key: "mic", slider: "mixerVolMic", label: "mixerVolMicVal" },
+];
+
+function setMixerStateView(state, text, headerText) {
+  for (const id of ["mixerState", "headerMixer"]) {
+    document.getElementById(id).dataset.state = state;
+  }
+  document.getElementById("mixerStateText").textContent = text;
+  document.getElementById("headerMixerText").textContent = headerText;
+}
+
+function renderMixer(data) {
+  if (!data.running) mixerHasSignal = false;
+  else if (data.level >= SIGNAL_ON) mixerHasSignal = true;
+  else if (data.level < SIGNAL_OFF) mixerHasSignal = false;
+
+  if (!data.running) setMixerStateView("off", "Leállítva", "Mixer: leállítva");
+  else if (mixerHasSignal) setMixerStateView("on", "Van jel", "Mixer: van jel");
+  else setMixerStateView("idle", "Nincs jel", "Mixer: nincs jel");
+
+  const power = document.getElementById("mixerPower");
+  if (document.activeElement !== power) power.checked = data.mic_live;
+  document.getElementById("mixerPowerLabel").textContent = data.mic_live ? "Mikrofon: élő" : "Mikrofon: ki";
+  document.getElementById("mixerWarning").hidden = data.output_ok !== false;
+  if (data.running && data.output_ok === false) {
+    document.getElementById("headerMixerText").textContent += " (nincs kimenet)";
+  }
+
+  // a jelszint gyenge jeleknel is latszodjon: gyokos skala
+  const shown = Math.min(1, Math.sqrt(data.level));
+  const fill = document.getElementById("meterFill");
+  fill.style.width = (shown * 100).toFixed(0) + "%";
+  fill.classList.toggle("hot", data.level >= 0.95);
+  document.getElementById("meter").setAttribute("aria-valuenow", (shown * 100).toFixed(0));
+
+  const flags = data.flags || [];
+  document.getElementById("chipBell").classList.toggle("on", data.running && flags.includes("BELL"));
+  document.getElementById("chipMusic").classList.toggle("on", data.running && flags.includes("PLAYING_MUSIC"));
+  document.getElementById("chipMic").classList.toggle("on", data.mic_live && flags.includes("PLAYING_MIC"));
+
+  for (const v of MIXER_VOLUMES) {
+    const slider = document.getElementById(v.slider);
+    // amig huzod / var a mentesre, nem irjuk felul
+    if (document.activeElement !== slider && !mixerVolumeDebounce[v.key]) {
+      slider.value = Math.round(data.volume[v.key] * 100);
+    }
+    document.getElementById(v.label).textContent = slider.value + "%";
+  }
+}
+
+async function pollMixer() {
+  try {
+    const data = await get("/api/mixer");
+    if (data && !data.error) renderMixer(data);
+  } catch (e) {
+    // a kovetkezo korben ujra probalja
+  }
+}
+
+(function startMixerPolling() {
+  const tick = async () => {
+    await pollMixer();
+    const active = document.getElementById("panel-mixer").classList.contains("active");
+    setTimeout(tick, active ? 200 : 1000);
+  };
+  tick();
+})();
+
+document.getElementById("mixerPower").addEventListener("change", async (e) => {
+  const result = await post("/api/mixer/mic", { live: e.target.checked });
+  if (result && result.error) await showError(result.error);
+  e.target.blur(); // a fókusz elengedése után a lekérdezés a valós állapotot mutatja (hiba esetén visszakapcsol)
+  await pollMixer();
+});
+
+for (const v of MIXER_VOLUMES) {
+  document.getElementById(v.slider).addEventListener("input", (e) => {
+    const value = Number(e.target.value);
+    document.getElementById(v.label).textContent = value + "%";
+    clearTimeout(mixerVolumeDebounce[v.key]);
+    mixerVolumeDebounce[v.key] = setTimeout(async () => {
+      mixerVolumeDebounce[v.key] = null;
+      const result = await post("/api/mixer/volume", { [v.key]: value / 100 });
+      if (result && result.error) await showError(result.error);
+    }, 150);
+  });
+}
+
+async function loadMixerInputs() {
+  const data = await get("/api/mixer/inputs");
+  if (!data || data.error) return;
+  const select = document.getElementById("mixerInputSelect");
+  select.innerHTML = "";
+  const inputs = data.inputs || [];
+  if (inputs.length === 0) {
+    // mikrofon nelkuli gep: egy letiltott jelzo opcio, a tobbi betoltes fut tovabb
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Nincs mikrofon";
+    opt.disabled = true;
+    select.appendChild(opt);
+    select.value = "";
+    return;
+  }
+  for (const d of inputs) {
+    const opt = document.createElement("option");
+    opt.value = d.index;
+    opt.textContent = d.name;
+    select.appendChild(opt);
+  }
+  select.value = data.current ? data.current.index : "";
+}
+
+document.getElementById("mixerInputSelect").addEventListener("change", async (e) => {
+  const result = await post("/api/mixer/input", { index: Number(e.target.value) });
+  if (result && result.error) {
+    await showError(result.error);
+    await loadMixerInputs();
+  }
+});
+
+async function loadMixerMusic() {
+  const data = await get("/api/music");
+  const select = document.getElementById("mixerMusicSelect");
+  const selected = select.value;
+  select.innerHTML = "";
+  const files = data && !data.error && Array.isArray(data.files) ? data.files : [];
+  for (const name of files) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    select.appendChild(opt);
+  }
+  if (selected) select.value = selected;
+}
+
+document.getElementById("btnMixerMusicPlay").addEventListener("click", async () => {
+  const name = document.getElementById("mixerMusicSelect").value;
+  if (!name) {
+    await showError("Válassz ki egy zenét a listából.");
+    return;
+  }
+  const result = await post("/api/mixer/music", { name });
+  if (result && result.error) await showError(result.error);
+  await pollMixer();
+});
+
+document.getElementById("btnMixerMusicStop").addEventListener("click", async () => {
+  await api("/api/mixer/music", { method: "DELETE" });
+  await pollMixer();
+});
+
+document.querySelector('.tab[data-tab="mixer"]').addEventListener("click", () => {
+  loadMixerMusic();
+  loadMixerInputs();
+});
+
 // ---------- inicializalas ----------
 
 async function init() {
-  await loadMediaList();
-  await loadSchedulesList();
-  await loadTimeState();
-  await loadOutputState();
-  await loadUploadLimit();
-  await loadMusicList();
-  await loadMusicStatus();
-  await loadLogs();
-  cancelEdit();
+  // minden betoltes kulon: egy hiba (pl. nincs mikrofon) ne allitsa le a tobbit
+  const loaders = [
+    loadMixerInputs,
+    loadMixerMusic,
+    loadMediaList,
+    loadSchedulesList,
+    loadTimeState,
+    loadOutputState,
+    loadUploadLimit,
+    loadMusicList,
+    loadMusicStatus,
+    loadLogs,
+    loadDevices,
+    loadDeviceLog,
+    cancelEdit,
+  ];
+  for (const load of loaders) {
+    try {
+      await load();
+    } catch (e) {
+      console.error("Betöltési hiba (" + load.name + "):", e);
+    }
+  }
 }
 
 init();

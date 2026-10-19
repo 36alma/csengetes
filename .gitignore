@@ -106,3 +106,4 @@ docs/*
 config.json
 download/*
 *.bat
+devices.json

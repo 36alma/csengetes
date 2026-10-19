@@ -4,10 +4,11 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import server
+from fastapi.testclient import TestClient
 
 
 def _authed_client():
-    client = server.app.test_client()
+    client = TestClient(server.app)
     client.get(f"/?token={server.AUTH_TOKEN}")
     return client
 
