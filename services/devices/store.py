@@ -14,6 +14,7 @@ import shutil
 import tempfile
 import threading
 import time
+import uuid as uuid_lib
 from typing import Callable
 
 from model import Device
@@ -61,6 +62,14 @@ def normalize_ip(value: object) -> str | None:
     return str(ip)
 
 
+def _is_uuid5(value: str) -> bool:
+    try:
+        parsed = uuid_lib.UUID(value)
+    except ValueError:
+        return False
+    return parsed.version == 5 and parsed.variant == uuid_lib.RFC_4122 and str(parsed) == value
+
+
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
@@ -78,6 +87,8 @@ def _loaded_problem(device: Device) -> str | None:
         return "name"
     if normalize_ip(device.ip_address) != device.ip_address:
         return "ip_address"
+    if device.uuid is not None and not _is_uuid5(device.uuid):
+        return "uuid"
     for field in _OPTIONAL:
         value = getattr(device, field)
         if value is not None and not _is_clean_text(value):
@@ -144,6 +155,8 @@ class DeviceStore:
                         problem = "id (duplikalt)"
                     elif any(d.ip_address == device.ip_address for d in devices):
                         problem = "ip_address (duplikalt)"
+                    elif device.uuid is not None and any(d.uuid == device.uuid for d in devices):
+                        problem = "uuid (duplikalt)"
                     elif any(d.token_hash == device.token_hash for d in devices):
                         problem = "token_hash (duplikalt)"
             if problem is not None:
@@ -208,6 +221,11 @@ class DeviceStore:
             raise DeviceNotFound("Ismeretlen eszkoz.")
         return device
 
+    def find_by_uuid(self, uuid: str) -> Device | None:
+        with self._lock:
+            device = next((d for d in self._devices if d.uuid == uuid), None)
+            return device.model_copy() if device else None
+
     def find_by_token(self, token: str) -> Device | None:
         if not isinstance(token, str) or not token:
             return None
@@ -248,15 +266,19 @@ class DeviceStore:
         token = secrets.token_urlsafe(32)
         return token, hash_token(token), self.now() + self._token_days * 86400
 
-    def create(self, name: str, ip_address: str, *, mac_address=None, hostname=None, version=None) -> tuple[Device, str]:
+    def create(self, name: str, ip_address: str, *, mac_address=None, hostname=None, version=None, uuid=None) -> tuple[Device, str]:
         name = _clean_text(name, "name", required=True)
         optional = {
             "mac_address": _clean_text(mac_address, "mac_address", False),
             "hostname": _clean_text(hostname, "hostname", False),
             "version": _clean_text(version, "version", False),
         }
+        if uuid is not None and not (isinstance(uuid, str) and _is_uuid5(uuid)):
+            raise DeviceInvalid("Ervenytelen 'uuid' mezo (v5 UUID kell).")
         with self._lock:
             ip = self._ip_or_raise(ip_address)
+            if uuid is not None and any(d.uuid == uuid for d in self._devices):
+                raise DeviceConflict("Ezzel az UUID-val mar van eszkoz.")
             token, digest, expires = self._new_token()
             device = Device(
                 id="d_" + secrets.token_hex(4),
@@ -265,6 +287,7 @@ class DeviceStore:
                 token_hash=digest,
                 token_expires_at=expires,
                 created_at=self.now(),
+                uuid=uuid,
                 **optional,
             )
             self._commit(self._devices + [device])
