@@ -15,6 +15,7 @@ from fakes import FakeMic, wait_until
 from api import mixer as api_mixer
 from model import AudioPacket
 from services.mixer import Mixer, MixerPlayer, PlayGate
+from services.music import MusicSession
 from services.mixer.mixing import SAMPLE_RATE
 
 
@@ -25,7 +26,7 @@ def env(tmp_path, monkeypatch):
     mixer.start()
     music_player = MixerPlayer(mixer, "music", PlayGate(), allowed_roots=[str(tmp_path)])
     state = {"authorized": True}
-    ctx = SimpleNamespace(mixer=mixer, music_player=music_player, ws_authorized=lambda ws: state["authorized"])
+    ctx = SimpleNamespace(mixer=mixer, music_player=music_player, time_src=None, music_session=MusicSession(), ws_authorized=lambda ws: state["authorized"])
     app = FastAPI()
     app.include_router(api_mixer.create_router(ctx))
     yield SimpleNamespace(client=TestClient(app), mixer=mixer, state=state, music_dir=tmp_path)
