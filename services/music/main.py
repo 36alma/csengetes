@@ -75,10 +75,10 @@ class MusicService:
         """True, ha a lejatszas elindult."""
         if not self.filename:
             self.prepare()
-        seconds_left = self.get_break()
-        total = self.get_music_length()
-
-        if seconds_left is not None and not self.force and total > seconds_left:
+        if not self.force:
+            seconds_left = self.get_break()
+            total = self.get_music_length()
+        if not self.force and seconds_left is not None and total > seconds_left:
             logger.info(
                 "Zene nem fer bele a szunetbe (%.0f mp > %d mp), kihagyva.", total, seconds_left
             )
