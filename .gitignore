@@ -107,3 +107,5 @@ config.json
 download/*
 *.bat
 devices.json
+
+local/
