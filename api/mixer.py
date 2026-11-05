@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Body, WebSocket
 
 from model import MixerStatus
-from services.music import download as music_download
+from services.music import MusicService, download as music_download
 from services.mixer.main import BITRATE_KBPS
 from services.mixer.mixing import BLOCK_SIZE, SAMPLE_RATE
 
@@ -116,6 +116,7 @@ def create_router(ctx: ApiContext) -> APIRouter:
             "output_ok": mixer.output_ok,
             "volume": volumes(mixer),
             "input": _device_dict(mixer.current_output_device),
+            "music": ctx.music_session.status(),
             "head": mixer.buffer.head,
             "stream": STREAM_INFO,
         }
@@ -177,17 +178,20 @@ def create_router(ctx: ApiContext) -> APIRouter:
         path = _music_path(body.get("name"))
         if path is None:
             return error("A zene nem talalhato.", 404)
-        # a hiba (pl. olvashatatlan fajl) a naploba kerul, a lejatszas a hatterben fut
-        ctx.music_player.play(
-            path,
-            force=True,
-            on_done=lambda err, p=path: err and logger.error("Mixer zene hiba (%s): %s", os.path.basename(p), err),
+        # ugyanaz a zenei allapot, mint a zene fulon: ott is latszik, hogy mi szol
+        started = ctx.music_session.start(
+            MusicService(None, ctx.music_player, ctx.time_src, force=True, now_play=True, files=[path])
         )
+        if not started:
+            ctx.music_session.stop(ctx.music_player)
+            ctx.music_session.start(
+                MusicService(None, ctx.music_player, ctx.time_src, force=True, now_play=True, files=[path])
+            )
         return {"ok": True}
 
     @router.delete("/api/mixer/music")
     def stop_music():
-        ctx.music_player.stop()
+        ctx.music_session.stop(ctx.music_player)
         return {"ok": True}
 
     @router.websocket("/api/mixer/stream")
