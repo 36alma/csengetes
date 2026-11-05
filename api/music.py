@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-import threading
 
 from fastapi import APIRouter, Body
 from fastapi.responses import JSONResponse
@@ -21,8 +20,7 @@ DOWNLOAD_DIR = music_download.DOWNLOAD_DIR
 
 def create_router(ctx: ApiContext) -> APIRouter:
     router = APIRouter()
-    lock = threading.Lock()
-    state: dict[str, MusicService | None] = {"current": None}
+    session = ctx.music_session
 
     def music_files() -> list[str]:
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
@@ -39,12 +37,8 @@ def create_router(ctx: ApiContext) -> APIRouter:
 
     def start_music(service: MusicService):
         """Elinditja a szolgaltatast; egyszerre csak egy zene futhat."""
-        with lock:
-            current = state["current"]
-            if current is not None and current.status in ("downloading", "playing"):
-                return error("Mar fut egy zene, allitsd le elobb.", 409)
-            state["current"] = service
-        threading.Thread(target=service.run, daemon=True).start()
+        if not session.start(service):
+            return error("Mar fut egy zene, allitsd le elobb.", 409)
         return JSONResponse({"ok": True, "started": True}, status_code=202)
 
     @router.get("/api/music")
@@ -95,23 +89,11 @@ def create_router(ctx: ApiContext) -> APIRouter:
 
     @router.get("/api/music/status")
     def music_status():
-        svc = state["current"]
-        if svc is None:
-            return {"status": "idle", "files": [], "current": None, "error": None}
-        return {
-            "status": svc.status,
-            "files": [os.path.basename(f) for f in svc.filename],
-            "current": os.path.basename(svc.current) if svc.current else None,
-            "error": svc.error,
-        }
+        return session.status()
 
     @router.post("/api/music/stop")
     def stop_music():
-        svc = state["current"]
-        if svc is not None:
-            svc.stop()
-        else:
-            ctx.music_player.stop()
+        session.stop(ctx.music_player)
         return {"ok": True}
 
     @router.delete("/api/music/{name}")
@@ -119,7 +101,7 @@ def create_router(ctx: ApiContext) -> APIRouter:
         path = music_path(name)
         if path is None:
             return error("A fajl nem talalhato.", 404)
-        svc = state["current"]
+        svc = session.current
         if svc is not None and svc.status == "playing" and path in [os.path.realpath(f) for f in svc.filename]:
             return error("A fajl jelenleg lejatszas alatt all.", 409)
         os.remove(path)
