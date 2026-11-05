@@ -958,6 +958,13 @@ function renderMixer(data) {
   document.getElementById("chipMusic").classList.toggle("on", data.running && flags.includes("PLAYING_MUSIC"));
   document.getElementById("chipMic").classList.toggle("on", data.mic_live && flags.includes("PLAYING_MIC"));
 
+  // a zene fulon indított szám a mixerben is látszik
+  const music = data.music || {};
+  const musicSelect = document.getElementById("mixerMusicSelect");
+  if (music.status === "playing" && music.current && document.activeElement !== musicSelect) {
+    musicSelect.value = music.current;
+  }
+
   for (const v of MIXER_VOLUMES) {
     const slider = document.getElementById(v.slider);
     // amig huzod / var a mentesre, nem irjuk felul

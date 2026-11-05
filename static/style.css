@@ -487,7 +487,11 @@ html, body {
 .devices-table td:first-child { width: auto; }
 .devices-table td, .devices-table th { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .devices-table tbody tr { cursor: default; }
-.devices-table .actions { display: flex; gap: 6px; }
+.devices-table th:last-child { width: 360px; }
+.devices-table td:last-child { overflow: visible; white-space: normal; }
+.devices-table .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+#panel-devices .form-row { align-items: center; }
+#panel-devices .form-row + .form-row { margin-top: 10px; }
 .devices-table .actions .btn { padding: 4px 10px; font-size: 12px; }
 .status-pill { font-weight: 600; }
 .status-pill[data-status="connected"] { color: var(--success-text); }
