@@ -49,6 +49,11 @@
   /* Vezerlok merete */
   --control-height: 32px;
   --control-height-sm: 28px;
+
+  /* Keret */
+  --nav-width: 184px;
+  --topbar-height: 56px;
+  --statusbar-height: 28px;
 }
 
 /* ---------- Alap ---------- */
@@ -459,43 +464,142 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .modal-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
 .modal-box .alert-detail:empty { display: none; }
 
-/* ---------- Regi oldal-layout (a fulek atallitasaig) ---------- */
+/* ---------- Alkalmazas keret: felso sav, navigacio, statuszsav ---------- */
 
-.app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+.app {
+  display: grid;
+  grid-template-columns: var(--nav-width) minmax(0, 1fr);
+  grid-template-rows: var(--topbar-height) minmax(0, 1fr) var(--statusbar-height);
+  grid-template-areas:
+    "top top"
+    "nav main"
+    "status status";
+  height: 100vh;
+  overflow: hidden;
+}
 
-.header {
+.topbar {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  min-width: 0;
+  padding-right: var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  flex-shrink: 0;
+  width: var(--nav-width);
+  padding: 0 var(--space-4);
+  border-right: 1px solid var(--border);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.topbar-block { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.clock {
+  font-size: var(--text-display);
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.topbar-meta {
+  max-width: 120px;
+  color: var(--text-muted);
+  font-size: var(--text-label);
+  line-height: 1.3;
+}
+.topbar-next {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  padding-left: var(--space-5);
+  border-left: 1px solid var(--border);
+}
+.next-bell {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-title);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.next-bell .muted { font-weight: 400; }
+.topbar-end { display: flex; align-items: center; gap: var(--space-4); margin-left: auto; }
+
+.nav {
+  grid-area: nav;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+}
+.nav-item {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-4) var(--space-5);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.header-title { font-size: var(--text-title); font-weight: 600; }
-
-.tabs {
-  display: flex;
-  gap: var(--space-1);
-  padding: 0 var(--space-5);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.tab {
-  padding: var(--space-3) var(--space-4);
+  height: 36px;
+  padding: 0 var(--space-3);
   border: none;
-  border-bottom: 2px solid transparent;
-  background: none;
+  border-radius: var(--radius-control);
+  background: transparent;
   color: var(--text-muted);
   font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
   cursor: pointer;
 }
-.tab:hover { color: var(--text); }
-.tab.active { border-bottom-color: var(--accent); color: var(--text); font-weight: 600; }
+.nav-item:hover { background: var(--surface-hover); color: var(--text); }
+.nav-item.active { background: var(--accent-weak); color: var(--text); font-weight: 600; }
+.nav-item.active .icon { color: var(--accent); }
+.nav-bottom { margin-top: auto; }
 
-.content { flex-grow: 1; overflow: auto; padding: var(--space-5); }
+.statusbar {
+  grid-area: status;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  min-width: 0;
+  padding: 0 var(--space-4);
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.statusbar .status { font-size: var(--text-label); }
+.statusbar .status:last-child { margin-left: auto; }
 
-.page { display: none; flex-direction: column; gap: var(--space-4); height: 100%; }
+.content { grid-area: main; min-width: 0; overflow: auto; }
+
+.page {
+  display: none;
+  flex-direction: column;
+  gap: var(--space-4);
+  height: 100%;
+  padding: var(--space-5);
+}
 .page.active { display: flex; }
+.page-header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); flex-shrink: 0; }
+.page-title { margin: 0; font-size: var(--text-title); font-weight: 600; }
+.page-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-left: auto; }
+
+@media (max-width: 1100px) {
+  :root { --nav-width: 56px; }
+  .brand { display: none; }
+  .topbar { padding-left: var(--space-4); }
+  .nav-item { justify-content: center; padding: 0; }
+  .nav-text { display: none; }
+}
+@media (max-width: 900px) {
+  .topbar-meta { display: none; }
+}
+
+/* ---------- Regi oldal-layout (a fulek atallitasaig) ---------- */
 
 .toolbar { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
 
@@ -568,7 +672,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 
 @media (max-width: 720px) {
-  .content { padding: var(--space-4); }
   .time-grid { grid-template-columns: 1fr; }
 }
 
@@ -576,7 +679,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 #panel-music .form-row { align-items: center; }
 #musicListbox option.now-playing { color: var(--ok); font-weight: 600; }
 
-.header-mixer { margin-left: auto; }
 .mixer-state { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--text-muted); }
 .mixer-state-text { color: var(--text); font-size: var(--text-title); font-weight: 600; }
 .state-dot { width: 8px; height: 8px; border-radius: var(--radius-control); background: var(--off); }

@@ -30,33 +30,45 @@
   <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v4"/></symbol>
 </svg>
 <div class="app">
-  <div class="header">
-    <span class="header-title">Csengetési rend</span>
-    <span class="mixer-state header-mixer" id="headerMixer" data-state="off" title="Mixer állapota">
-      <span class="state-dot"></span><span id="headerMixerText">Mixer: leállítva</span>
-    </span>
-  </div>
+  <header class="topbar">
+    <div class="brand">Csengetési rend</div>
+    <div class="topbar-block">
+      <span class="clock num" id="clockTime">--:--:--</span>
+      <span class="topbar-meta"><span id="clockDate">Idő betöltése…</span> · <span id="clockSource">–</span></span>
+    </div>
+    <div class="topbar-block topbar-next">
+      <span class="field-label">Következő csengetés</span>
+      <span class="next-bell"><span class="num" id="nextBellTime">–</span><span class="num muted" id="nextBellCountdown"></span></span>
+    </div>
+    <div class="topbar-end">
+      <span class="badge-onair" id="onAirBadge" hidden>Adásban</span>
+      <span class="status" id="headerMixer" data-tone="off" title="Mixer állapota"><span id="headerMixerText">Mixer: leállítva</span></span>
+    </div>
+  </header>
 
-  <div class="tabs" role="tablist">
-    <button class="tab active" data-tab="mixer">Mixer</button>
-    <button class="tab" data-tab="schedule">Csengetési rend</button>
-    <button class="tab" data-tab="media">Média</button>
-    <button class="tab" data-tab="music">Zene</button>
-    <button class="tab" data-tab="time">Idő</button>
-    <button class="tab" data-tab="output">Kimenet</button>
-    <button class="tab" data-tab="devices">Eszközök</button>
-    <button class="tab" data-tab="log">Napló</button>
-  </div>
+  <nav class="nav" aria-label="Fő navigáció">
+    <button class="nav-item active" data-tab="mixer" aria-current="page" title="Mixer"><svg class="icon"><use href="#i-mixer"/></svg><span class="nav-text">Mixer</span></button>
+    <button class="nav-item" data-tab="schedule" title="Ütemezés"><svg class="icon"><use href="#i-schedule"/></svg><span class="nav-text">Ütemezés</span></button>
+    <button class="nav-item" data-tab="media" title="Média"><svg class="icon"><use href="#i-bell"/></svg><span class="nav-text">Média</span></button>
+    <button class="nav-item" data-tab="music" title="Zene"><svg class="icon"><use href="#i-library"/></svg><span class="nav-text">Zene</span></button>
+    <button class="nav-item" data-tab="devices" title="Eszközök"><svg class="icon"><use href="#i-speaker"/></svg><span class="nav-text">Eszközök</span></button>
+    <button class="nav-item" data-tab="log" title="Napló"><svg class="icon"><use href="#i-log"/></svg><span class="nav-text">Napló</span></button>
+    <button class="nav-item nav-bottom" data-tab="time" title="Idő"><svg class="icon"><use href="#i-schedule"/></svg><span class="nav-text">Idő</span></button>
+    <button class="nav-item" data-tab="output" title="Kimenet"><svg class="icon"><use href="#i-settings"/></svg><span class="nav-text">Kimenet</span></button>
+  </nav>
 
-  <div class="content">
+  <footer class="statusbar">
+    <span class="status" id="sbDevices" data-tone="off">Hangszórók: –</span>
+    <span class="status" id="sbOutput" data-tone="off">Kimenet: –</span>
+    <span class="status" id="sbConnection" data-tone="off">Szerver: csatlakozás…</span>
+  </footer>
+
+  <main class="content">
 
     <!-- Mixer -->
     <section class="page active" id="panel-mixer">
       <div class="form-card mixer-card">
         <div class="mixer-head">
-          <div class="mixer-state" id="mixerState" data-state="off">
-            <span class="state-dot"></span><span class="mixer-state-text" id="mixerStateText">Leállítva</span>
-          </div>
           <label class="switch-row">
             <span class="switch">
               <input type="checkbox" id="mixerPower">
@@ -324,7 +336,7 @@
       <pre class="log-box" id="logBox"></pre>
     </section>
 
-  </div>
+  </main>
 </div>
 
 <div class="alert-overlay" id="alertOverlay">

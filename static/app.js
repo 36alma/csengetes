@@ -33,14 +33,126 @@ function post(path, data) {
 
 // ---------- fulek ----------
 
-document.querySelectorAll(".tab").forEach((tab) => {
+document.querySelectorAll(".nav-item").forEach((tab) => {
   tab.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+    document.querySelectorAll(".nav-item").forEach((t) => {
+      t.classList.remove("active");
+      t.removeAttribute("aria-current");
+    });
     document.querySelectorAll(".page").forEach((p) => p.classList.remove("active"));
     tab.classList.add("active");
+    tab.setAttribute("aria-current", "page");
     document.getElementById("panel-" + tab.dataset.tab).classList.add("active");
   });
 });
+
+function isPageActive(name) {
+  return document.getElementById("panel-" + name).classList.contains("active");
+}
+
+// ---------- statuszsav ----------
+
+function setStatus(id, tone, text) {
+  const el = document.getElementById(id);
+  el.dataset.tone = tone;
+  el.textContent = text;
+}
+
+let serverReachable = null;
+
+function setConnection(ok, text) {
+  if (serverReachable === ok) return;
+  serverReachable = ok;
+  setStatus("sbConnection", ok ? "ok" : "warn", text);
+}
+
+function renderDeviceSummary(devices) {
+  if (!Array.isArray(devices)) return;
+  const connected = devices.filter((d) => d.status === "connected").length;
+  if (devices.length === 0) setStatus("sbDevices", "off", "Hangszórók: nincs felvett eszköz");
+  else setStatus("sbDevices", connected ? "ok" : "off", `Hangszórók: ${connected}/${devices.length} csatlakozva`);
+}
+
+let outputDeviceName = "–";
+
+function renderOutputSummary(mixer) {
+  let tone = "off";
+  let suffix = "";
+  if (mixer && mixer.running && mixer.output_ok === false) {
+    tone = "warn";
+    suffix = " (nem érhető el)";
+  } else if (mixer && mixer.running) {
+    tone = "ok";
+  }
+  setStatus("sbOutput", tone, `Kimenet: ${outputDeviceName}${suffix}`);
+}
+
+// ---------- felso sav: ora es kovetkezo csengetes ----------
+
+let activeSchedule = null; // { name, events } - az utemezo altal hasznalt, mentett rend
+
+async function loadActiveSchedule() {
+  const list = await get("/api/schedules");
+  const name = list && list.active;
+  if (!name) {
+    activeSchedule = null;
+    return;
+  }
+  const data = await get("/api/schedules/" + encodeURIComponent(name));
+  activeSchedule = data && !data.error ? { name, events: data.events || [] } : null;
+}
+
+function parseClock(text) {
+  const m = /^\d{2}:\d{2}(?::\d{2})?$/.test(text) ? text.split(":").map(Number) : null;
+  return m ? m[0] * 3600 + m[1] * 60 + (m[2] || 0) : null;
+}
+
+function nextBellFrom(nowSeconds, events) {
+  const times = [...new Set(events.map((e) => e.time))].map(parseClock).filter((s) => s !== null).sort((a, b) => a - b);
+  if (!times.length) return null;
+  const later = times.find((s) => s > nowSeconds);
+  if (later !== undefined) return { at: later, in: later - nowSeconds, tomorrow: false };
+  return { at: times[0], in: 86400 - nowSeconds + times[0], tomorrow: true };
+}
+
+const pad2 = (n) => String(n).padStart(2, "0");
+
+function formatHM(seconds) {
+  return pad2(Math.floor(seconds / 3600) % 24) + ":" + pad2(Math.floor(seconds / 60) % 60);
+}
+
+function formatCountdown(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor(seconds / 60) % 60;
+  const s = seconds % 60;
+  return (h ? h + ":" + pad2(m) : String(m)) + ":" + pad2(s);
+}
+
+function renderClock(data) {
+  const [date, time] = String(data.now || "").split(" ");
+  if (!time) return;
+  document.getElementById("clockTime").textContent = time;
+  const [y, mo, d] = date.split("-").map(Number);
+  const weekday = new Date(y, mo - 1, d).toLocaleDateString("hu-HU", { weekday: "long" });
+  document.getElementById("clockDate").textContent = `${y}. ${pad2(mo)}. ${pad2(d)}., ${weekday}`;
+  document.getElementById("clockSource").textContent = data.mode === "ntp" ? "NTP-idő" : "Kézi idő";
+
+  const timeEl = document.getElementById("nextBellTime");
+  const countdownEl = document.getElementById("nextBellCountdown");
+  if (!activeSchedule) {
+    timeEl.textContent = "Nincs aktív rend";
+    countdownEl.textContent = "";
+    return;
+  }
+  const next = nextBellFrom(parseClock(time), activeSchedule.events);
+  if (!next) {
+    timeEl.textContent = "Nincs esemény";
+    countdownEl.textContent = "";
+    return;
+  }
+  timeEl.textContent = (next.tomorrow ? "holnap " : "") + formatHM(next.at);
+  countdownEl.textContent = formatCountdown(next.in) + " múlva";
+}
 
 // ---------- csuszkak kitoltese ----------
 // A csuszka savjanak kitoltott resze a --p (0..1) CSS valtozobol rajzolodik.
@@ -192,6 +304,7 @@ async function loadScheduleEvents(name) {
   }
   currentScheduleData = data;
   await post("/api/schedules/" + encodeURIComponent(name) + "/activate", {});
+  loadActiveSchedule();
   renderEventsTable({ resetScroll: true });
 }
 
@@ -319,6 +432,7 @@ document.getElementById("btnSaveSchedule").addEventListener("click", async () =>
     await showError(result.error);
     return;
   }
+  loadActiveSchedule();
   await modal.alert(`${name} elmentve.`, { title: "Mentés sikeres" });
 });
 
@@ -460,7 +574,8 @@ async function loadTimeState() {
   document.getElementById("modeNtp").checked = data.mode === "ntp";
   document.getElementById("modeManual").checked = data.mode === "manual";
   document.getElementById("ntpServer").value = data.ntp_server;
-  document.getElementById("currentTime").textContent = "Aktuális számított idő: " + data.now;
+  document.getElementById("currentTime").textContent = data.now;
+  renderClock(data);
 }
 
 document.querySelectorAll('input[name="timeMode"]').forEach((radio) => {
@@ -488,10 +603,17 @@ document.getElementById("btnApplyManual").addEventListener("click", async () => 
 });
 
 setInterval(() => {
-  get("/api/time").then((data) => {
-    document.getElementById("currentTime").textContent = "Aktuális számított idő: " + data.now;
-  });
+  get("/api/time")
+    .then((data) => {
+      if (!data || !data.now) return;
+      document.getElementById("currentTime").textContent = data.now;
+      renderClock(data);
+    })
+    .catch(() => {});
 }, 1000);
+
+// az utemezo altal hasznalt rend (a kovetkezo csengeteshez); mentes es valtas utan azonnal is frissul
+setInterval(() => loadActiveSchedule().catch(() => {}), 15000);
 
 // ---------- Kimenet ful ----------
 
@@ -526,6 +648,9 @@ async function loadOutputState() {
     }
   }
   select.value = selectedKey;
+  const currentDevice = data.devices.find((d) => d.index === data.current);
+  outputDeviceName = currentDevice ? currentDevice.name : "Rendszer alapértelmezett";
+  renderOutputSummary(lastMixerData);
 
   const slider = document.getElementById("volumeSlider");
   slider.max = data.max_volume;
@@ -537,6 +662,9 @@ async function loadOutputState() {
 document.getElementById("deviceSelect").addEventListener("change", async (e) => {
   const idx = deviceMap[e.target.value];
   await post("/api/output/device", { index: idx });
+  const option = e.target.options[e.target.selectedIndex];
+  outputDeviceName = idx === null ? "Rendszer alapértelmezett" : option.textContent.replace(/ \(#\d+\)$/, "");
+  renderOutputSummary(lastMixerData);
 });
 
 function updateVolumeLabel(value) {
@@ -782,6 +910,7 @@ function renderPending(data) {
 
 async function loadDevices() {
   const data = await get("/api/devices");
+  renderDeviceSummary(data && data.devices);
   renderDevices((data && data.devices) || []);
   renderPending(await get("/api/devices/pending"));
 }
@@ -810,15 +939,18 @@ document.getElementById("btnDeviceSave").addEventListener("click", async () => {
 
 document.getElementById("btnDeviceCancel").addEventListener("click", resetDeviceForm);
 
-document.querySelector('.tab[data-tab="devices"]').addEventListener("click", () => {
+document.querySelector('.nav-item[data-tab="devices"]').addEventListener("click", () => {
   loadDevices();
   loadDeviceLog();
 });
 
 setInterval(() => {
-  if (document.getElementById("panel-devices").classList.contains("active")) {
+  if (isPageActive("devices")) {
     loadDevices();
     loadDeviceLog();
+  } else {
+    // a statuszsav hangszoro-szamlaloja mas fulon is frissul
+    get("/api/devices").then((data) => renderDeviceSummary(data && data.devices)).catch(() => {});
   }
 }, 4000);
 
@@ -949,30 +1081,32 @@ const MIXER_VOLUMES = [
   { key: "mic", slider: "mixerVolMic", label: "mixerVolMicVal" },
 ];
 
-function setMixerStateView(state, text, headerText) {
-  for (const id of ["mixerState", "headerMixer"]) {
-    document.getElementById(id).dataset.state = state;
-  }
-  document.getElementById("mixerStateText").textContent = text;
-  document.getElementById("headerMixerText").textContent = headerText;
+let lastMixerData = null;
+
+// A mixer allapota egy helyen, a felso savban latszik.
+function setMixerStateView(tone, text) {
+  const el = document.getElementById("headerMixer");
+  el.dataset.tone = tone;
+  document.getElementById("headerMixerText").textContent = text;
 }
 
 function renderMixer(data) {
+  lastMixerData = data;
   if (!data.running) mixerHasSignal = false;
   else if (data.level >= SIGNAL_ON) mixerHasSignal = true;
   else if (data.level < SIGNAL_OFF) mixerHasSignal = false;
 
-  if (!data.running) setMixerStateView("off", "Leállítva", "Mixer: leállítva");
-  else if (mixerHasSignal) setMixerStateView("on", "Van jel", "Mixer: van jel");
-  else setMixerStateView("idle", "Nincs jel", "Mixer: nincs jel");
+  if (!data.running) setMixerStateView("off", "Mixer: leállítva");
+  else if (data.output_ok === false) setMixerStateView("warn", mixerHasSignal ? "Mixer: van jel, nincs kimenet" : "Mixer: nincs kimenet");
+  else if (mixerHasSignal) setMixerStateView("ok", "Mixer: van jel");
+  else setMixerStateView("off", "Mixer: nincs jel");
+  renderOutputSummary(data);
+  document.getElementById("onAirBadge").hidden = !data.mic_live;
 
   const power = document.getElementById("mixerPower");
   if (document.activeElement !== power) power.checked = data.mic_live;
   document.getElementById("mixerPowerLabel").textContent = data.mic_live ? "Mikrofon: élő" : "Mikrofon: ki";
   document.getElementById("mixerWarning").hidden = data.output_ok !== false;
-  if (data.running && data.output_ok === false) {
-    document.getElementById("headerMixerText").textContent += " (nincs kimenet)";
-  }
 
   // a jelszint gyenge jeleknel is latszodjon: gyokos skala
   const shown = Math.min(1, Math.sqrt(data.level));
@@ -1007,9 +1141,15 @@ function renderMixer(data) {
 async function pollMixer() {
   try {
     const data = await get("/api/mixer");
-    if (data && !data.error) renderMixer(data);
+    if (data && !data.error) {
+      renderMixer(data);
+      setConnection(true, "Szerver: kapcsolódva");
+    } else {
+      setConnection(false, "Szerver: hibás válasz");
+    }
   } catch (e) {
     // a kovetkezo korben ujra probalja
+    setConnection(false, "Szerver: nem érhető el");
   }
 }
 
@@ -1106,7 +1246,7 @@ document.getElementById("btnMixerMusicStop").addEventListener("click", async () 
   await pollMixer();
 });
 
-document.querySelector('.tab[data-tab="mixer"]').addEventListener("click", () => {
+document.querySelector('.nav-item[data-tab="mixer"]').addEventListener("click", () => {
   loadMixerMusic();
   loadMixerInputs();
 });
@@ -1120,6 +1260,7 @@ async function init() {
     loadMixerMusic,
     loadMediaList,
     loadSchedulesList,
+    loadActiveSchedule,
     loadTimeState,
     loadOutputState,
     loadUploadLimit,
