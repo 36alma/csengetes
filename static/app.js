@@ -758,8 +758,9 @@ document.getElementById("deviceSelect").addEventListener("change", async (e) => 
 
 function updateVolumeLabel(value) {
   const rounded = Math.round(value);
-  const suffix = rounded > 100 ? " (Boost)" : "";
-  document.getElementById("volumeLabel").textContent = `Hangerő: ${rounded}%${suffix}`;
+  const label = document.getElementById("volumeLabel");
+  label.textContent = rounded > 100 ? `${rounded}% erősítés` : `${rounded}%`;
+  label.classList.toggle("is-boost", rounded > 100);
 }
 
 let volumeDebounce = null;

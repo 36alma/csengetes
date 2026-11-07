@@ -52,8 +52,7 @@
     <button class="nav-item" data-tab="library" title="Hangfájlok"><svg class="icon"><use href="#i-library"/></svg><span class="nav-text">Hangfájlok</span></button>
     <button class="nav-item" data-tab="devices" title="Eszközök"><svg class="icon"><use href="#i-speaker"/></svg><span class="nav-text">Eszközök</span></button>
     <button class="nav-item" data-tab="log" title="Napló"><svg class="icon"><use href="#i-log"/></svg><span class="nav-text">Napló</span></button>
-    <button class="nav-item nav-bottom" data-tab="time" title="Idő"><svg class="icon"><use href="#i-schedule"/></svg><span class="nav-text">Idő</span></button>
-    <button class="nav-item" data-tab="output" title="Kimenet"><svg class="icon"><use href="#i-settings"/></svg><span class="nav-text">Kimenet</span></button>
+    <button class="nav-item nav-bottom" data-tab="settings" title="Beállítások"><svg class="icon"><use href="#i-settings"/></svg><span class="nav-text">Beállítások</span></button>
   </nav>
 
   <footer class="statusbar">
@@ -316,51 +315,71 @@
       </div>
     </section>
 
-    <!-- Ido -->
-    <section class="page" id="panel-time">
-      <div class="form-card">
-        <div class="mode-row">
-          <label class="radio-row"><input type="radio" name="timeMode" value="ntp" id="modeNtp"> NTP</label>
-          <label class="radio-row"><input type="radio" name="timeMode" value="manual" id="modeManual"> Kézi</label>
-        </div>
-
-        <div class="time-grid">
-          <label class="field-label">NTP szerver</label>
-          <input class="input" id="ntpServer" type="text" style="width:220px">
-          <button class="btn" id="btnSyncNtp">Frissítés most</button>
-
-          <label class="field-label">Kézi dátum/idő (YYYY-MM-DD HH:MM:SS)</label>
-          <input class="input" id="manualTime" type="text" style="width:190px">
-          <button class="btn" id="btnApplyManual">Alkalmaz</button>
-        </div>
-
-        <div class="current-time" id="currentTime">Aktuális számított idő: -</div>
+    <!-- Beallitasok: ido, kimenet, feltoltes -->
+    <section class="page" id="panel-settings">
+      <div class="page-header">
+        <h1 class="page-title">Beállítások</h1>
       </div>
 
-      <div class="form-card">
-        <div class="form-row">
-          <span class="field-label bold">Max. feltölthető fájlméret (MB)</span>
-          <input class="input" id="uploadLimitInput" type="number" min="1" max="1024" step="1" style="width:100px">
-          <button class="btn" id="btnSaveUploadLimit">Mentés</button>
-        </div>
-      </div>
-    </section>
+      <div class="settings-grid">
+        <section class="panel" aria-labelledby="timeTitle">
+          <header class="panel-header"><h2 class="panel-title" id="timeTitle">Időforrás</h2></header>
+          <div class="panel-body form-grid">
+            <span class="field-label" id="timeModeLabel">Mód</span>
+            <div class="segmented" role="radiogroup" aria-labelledby="timeModeLabel">
+              <label><input type="radio" name="timeMode" value="ntp" id="modeNtp">NTP</label>
+              <label><input type="radio" name="timeMode" value="manual" id="modeManual">Kézi</label>
+            </div>
 
-    <!-- Kimenet -->
-    <section class="page" id="panel-output">
-      <div class="form-card">
-        <span class="field-label bold">Kimeneti eszköz</span>
-        <select class="select" id="deviceSelect" style="width:420px; margin-left:10px"></select>
-      </div>
+            <label class="field-label" for="ntpServer">NTP-szerver</label>
+            <div class="control-row">
+              <input class="input" id="ntpServer" type="text" autocomplete="off">
+              <button class="btn" id="btnSyncNtp"><svg class="icon"><use href="#i-refresh"/></svg>Szinkronizálás</button>
+            </div>
 
-      <div class="form-card">
-        <div class="volume-label" id="volumeLabel">Hangerő: 100%</div>
-        <input type="range" id="volumeSlider" class="slider" min="0" max="200" step="1" value="100">
-        <div class="scale-row">
-          <span>0%</span>
-          <span class="scale-mid">100% (normál)</span>
-          <span class="scale-boost">200% (boost)</span>
-        </div>
+            <label class="field-label" for="manualTime">Kézi idő</label>
+            <div class="field">
+              <div class="control-row">
+                <input class="input num" id="manualTime" type="text" placeholder="2026-09-01 07:45:00" autocomplete="off">
+                <button class="btn" id="btnApplyManual">Alkalmaz</button>
+              </div>
+              <span class="field-hint">Formátum: ÉÉÉÉ-HH-NN óó:pp:mm</span>
+            </div>
+
+            <span class="field-label">Számított idő</span>
+            <span class="num settings-value" id="currentTime">–</span>
+          </div>
+        </section>
+
+        <section class="panel" aria-labelledby="outputTitle">
+          <header class="panel-header"><h2 class="panel-title" id="outputTitle">Kimenet</h2></header>
+          <div class="panel-body form-grid">
+            <label class="field-label" for="deviceSelect">Kimeneti eszköz</label>
+            <select class="select" id="deviceSelect"></select>
+
+            <label class="field-label" for="volumeSlider">Mentett fő hangerő</label>
+            <div class="field slider-field">
+              <output class="num settings-value" id="volumeLabel" for="volumeSlider">100%</output>
+              <input type="range" id="volumeSlider" class="slider" min="0" max="200" step="1" value="100">
+              <div class="hscale" aria-hidden="true">
+                <span style="--at: 0">0</span><span class="unity" style="--at: 0.5">100 névleges</span><span style="--at: 1">200</span>
+              </div>
+              <span class="field-hint">Azonnal érvényes, és újraindítás után is ez marad. A Mixer Master fadere csak az aktuális futásra állít.</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" aria-labelledby="uploadTitle">
+          <header class="panel-header"><h2 class="panel-title" id="uploadTitle">Feltöltés</h2></header>
+          <div class="panel-body form-grid">
+            <label class="field-label" for="uploadLimitInput">Max. fájlméret</label>
+            <div class="control-row">
+              <input class="input num input-short" id="uploadLimitInput" type="number" min="1" max="1024" step="1">
+              <span class="muted">MB</span>
+              <button class="btn" id="btnSaveUploadLimit">Mentés</button>
+            </div>
+          </div>
+        </section>
       </div>
     </section>
 
