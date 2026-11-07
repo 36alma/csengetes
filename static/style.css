@@ -14,6 +14,7 @@
   --text: #e8e9eb;
   --text-muted: #a3a7ae;
   --text-disabled: #6b7079;
+  --text-placeholder: #80858e;
   --scrim: rgba(0, 0, 0, 0.6);
 
   /* Accent: kizarolag aktiv / kivalasztott allapot */
@@ -74,7 +75,7 @@ html, body {
 
 button, input, select, textarea { font: inherit; color: inherit; }
 
-::placeholder { color: var(--text-disabled); }
+::placeholder { color: var(--text-placeholder); }
 
 [hidden] { display: none !important; }
 
