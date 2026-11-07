@@ -345,8 +345,9 @@ async function loadSchedulesList() {
   if (data.active && data.schedules.includes(data.active)) {
     select.value = data.active;
     await loadScheduleEvents(data.active);
-  } else if (data.schedules.length) {
-    select.value = data.schedules[0];
+  } else {
+    if (data.schedules.length) select.value = data.schedules[0];
+    renderEventsTable();
   }
 }
 
@@ -368,19 +369,38 @@ function sortedEvents() {
   );
 }
 
+// Ures tablazat: egyetlen, a teljes szelessegu sor magyarazo szoveggel
+function emptyRow(tbody, colspan, text) {
+  const tr = document.createElement("tr");
+  tr.className = "empty-row";
+  const td = document.createElement("td");
+  td.colSpan = colspan;
+  td.textContent = text;
+  tr.appendChild(td);
+  tbody.appendChild(tr);
+}
+
 function renderEventsTable({ resetScroll = false } = {}) {
   const tbody = document.getElementById("eventsTbody");
-  const scroller = tbody.closest(".table-card");
+  const scroller = tbody.closest(".table-wrap");
   const scrollTop = resetScroll ? 0 : scroller.scrollTop;
   tbody.innerHTML = "";
-  if (!currentScheduleData) return;
+  const count = document.getElementById("eventCount");
+  if (!currentScheduleData) {
+    count.textContent = "";
+    emptyRow(tbody, 2, "Nincs kiválasztott rend. Válassz egyet fent, vagy hozz létre újat.");
+    return;
+  }
   const events = sortedEvents();
+  count.textContent = events.length + " esemény";
+  if (!events.length) emptyRow(tbody, 2, "Ebben a rendben még nincs esemény. Adj hozzá egyet a jobb oldali űrlappal.");
   events.forEach((ev, i) => {
     const tr = document.createElement("tr");
     const key = eventKey(ev);
     if (selectedRowKeys.has(key)) tr.classList.add("selected");
     else if (i % 2 === 1) tr.classList.add("alt");
     const tdTime = document.createElement("td");
+    tdTime.className = "num";
     tdTime.textContent = ev.time;
     const tdFile = document.createElement("td");
     tdFile.textContent = ev.file;
@@ -413,17 +433,19 @@ function startEditEvent(ev) {
   editingOriginal = { ...ev };
   document.getElementById("eventTime").value = ev.time;
   document.getElementById("eventFile").value = ev.file;
-  document.getElementById("btnAddEvent").textContent = "Módosítás mentése";
+  document.getElementById("btnAddEvent").textContent = "Módosítás";
   document.getElementById("btnCancelEdit").style.display = "inline-flex";
-  document.getElementById("editHint").textContent = `Szerkesztés: ${ev.time} → ${ev.file}`;
+  document.getElementById("eventEditorTitle").textContent = "Esemény szerkesztése";
+  document.getElementById("editHint").textContent = `Eredeti: ${ev.time} – ${ev.file}`;
 }
 
 function cancelEdit() {
   editingOriginal = null;
   document.getElementById("eventTime").value = "";
   document.getElementById("eventFile").value = defaultMediaFile;
-  document.getElementById("btnAddEvent").textContent = "Esemény hozzáadás";
+  document.getElementById("btnAddEvent").textContent = "Hozzáadás";
   document.getElementById("btnCancelEdit").style.display = "none";
+  document.getElementById("eventEditorTitle").textContent = "Új esemény";
   document.getElementById("editHint").textContent = "";
 }
 

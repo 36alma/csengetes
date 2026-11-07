@@ -179,47 +179,63 @@
       </div>
     </section>
 
-    <!-- Csengetesi rend -->
+    <!-- Utemezes -->
     <section class="page" id="panel-schedule">
-      <div class="toolbar">
-        <label class="field-label" for="scheduleSelect">Aktív rend</label>
-        <select id="scheduleSelect" class="select"></select>
+      <div class="page-header">
+        <h1 class="page-title">Ütemezés</h1>
+        <div class="control-row schedule-picker">
+          <label class="field-label" for="scheduleSelect">Rend</label>
+          <select id="scheduleSelect" class="select"></select>
+        </div>
         <button class="btn" id="btnRefreshSchedules"><svg class="icon"><use href="#i-refresh"/></svg>Újratöltés</button>
         <button class="btn" id="btnNewSchedule"><svg class="icon"><use href="#i-plus"/></svg>Új rend</button>
-      </div>
-
-      <div class="table-card">
-        <table class="table table-select">
-          <thead>
-            <tr><th style="width:180px">IDŐPONT</th><th>FÁJLNÉV</th></tr>
-          </thead>
-          <tbody id="eventsTbody"></tbody>
-        </table>
-      </div>
-
-      <div class="edit-hint" id="editHint"></div>
-
-      <div class="form-card">
-        <div class="form-row">
-          <div class="form-field">
-            <label class="field-label" for="eventTime">Időpont</label>
-            <input class="input" id="eventTime" type="text" placeholder="07:45" style="width:90px">
-          </div>
-          <div class="form-field grow">
-            <label class="field-label" for="eventFile">Fájl</label>
-            <select class="select" id="eventFile" style="width:100%"></select>
-          </div>
-          <button class="btn" id="btnAddEvent">Esemény hozzáadás</button>
-          <button class="btn" id="btnCancelEdit" style="display:none">Mégse</button>
-          <button class="btn btn-danger" id="btnRemoveEvent">Kijelölt törlése</button>
-          <button class="btn btn-danger-solid" id="btnRemoveAllEvents">Összes törlése</button>
+        <div class="page-actions">
+          <button class="btn" id="btnRingNow"><svg class="icon"><use href="#i-bell"/></svg>Csengetés most</button>
+          <button class="btn btn-primary" id="btnSaveSchedule">Rend mentése</button>
         </div>
-        <div class="selection-hint">Többszörös kijelölés: Ctrl+klikk (egyenként), Shift+klikk (tartomány)</div>
       </div>
 
-      <div class="save-row">
-        <button class="btn" id="btnRingNow">Manuális csengetés indítása most</button>
-        <button class="btn btn-primary" id="btnSaveSchedule">Rend mentése</button>
+      <div class="schedule-layout">
+        <section class="panel" aria-labelledby="eventsTitle">
+          <header class="panel-header">
+            <h2 class="panel-title" id="eventsTitle">Események</h2>
+            <span class="muted num" id="eventCount"></span>
+            <span class="panel-actions field-hint">Ctrl+kattintás: több sor · Shift+kattintás: tartomány · dupla kattintás: szerkesztés</span>
+          </header>
+          <div class="table-wrap">
+            <table class="table table-select">
+              <thead>
+                <tr><th class="col-time">Időpont</th><th>Hangfájl</th></tr>
+              </thead>
+              <tbody id="eventsTbody"></tbody>
+            </table>
+          </div>
+          <footer class="panel-footer">
+            <button class="btn btn-danger" id="btnRemoveEvent"><svg class="icon"><use href="#i-trash"/></svg>Kijelöltek törlése</button>
+            <button class="btn btn-danger" id="btnRemoveAllEvents">Összes törlése</button>
+          </footer>
+        </section>
+
+        <section class="panel schedule-editor" aria-labelledby="eventEditorTitle">
+          <header class="panel-header"><h2 class="panel-title" id="eventEditorTitle">Új esemény</h2></header>
+          <div class="panel-body">
+            <div class="field">
+              <label class="field-label" for="eventTime">Időpont</label>
+              <input class="input num" id="eventTime" type="text" placeholder="07:45" inputmode="numeric" autocomplete="off">
+              <span class="field-hint">Formátum: ÓÓ:PP</span>
+            </div>
+            <div class="field">
+              <label class="field-label" for="eventFile">Hangfájl</label>
+              <select class="select" id="eventFile"></select>
+            </div>
+            <div class="edit-hint" id="editHint"></div>
+            <div class="editor-actions">
+              <button class="btn" id="btnAddEvent">Hozzáadás</button>
+              <button class="btn" id="btnCancelEdit" style="display:none">Mégse</button>
+            </div>
+            <p class="field-hint">A módosítások a „Rend mentése” gombbal lépnek életbe.</p>
+          </div>
+        </section>
       </div>
     </section>
 

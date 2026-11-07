@@ -812,6 +812,28 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .mixer-events { display: flex; }
 }
 
+/* ---------- Utemezes ---------- */
+
+.schedule-picker .select { width: 220px; }
+.schedule-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  align-items: start;
+  gap: var(--space-4);
+  flex: 1;
+  min-height: 0;
+}
+.schedule-layout > .panel:first-child { align-self: stretch; }
+.col-time { width: 112px; }
+.editor-actions { display: flex; gap: var(--space-2); }
+.edit-hint { color: var(--warn); }
+.edit-hint:empty { display: none; }
+.panel-body > .field-hint { margin: 0; }
+@media (max-width: 1000px) {
+  .schedule-layout { grid-template-columns: minmax(0, 1fr); }
+  .schedule-layout > .panel:first-child { min-height: 280px; }
+}
+
 /* ---------- Regi oldal-layout (a fulek atallitasaig) ---------- */
 
 .toolbar { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
@@ -829,8 +851,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .table-card > .table { flex-shrink: 0; }
 
-.edit-hint { min-height: var(--space-4); color: var(--warn); font-weight: 600; }
-.selection-hint { margin-top: var(--space-2); font-size: var(--text-label); color: var(--text-muted); }
 
 .form-card {
   flex-shrink: 0;
@@ -840,9 +860,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
   background: var(--surface);
 }
 .form-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2); }
-.form-field { display: flex; flex-direction: column; gap: var(--space-1); }
-.form-field.grow { flex-grow: 1; }
-.save-row { display: flex; justify-content: flex-end; gap: var(--space-2); flex-shrink: 0; }
 
 .list-card { padding: var(--space-2); }
 .media-bottom { display: flex; align-items: center; justify-content: center; gap: var(--space-4); flex-shrink: 0; }
