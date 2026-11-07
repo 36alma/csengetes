@@ -68,23 +68,34 @@
       <div class="mixer-layout">
         <div class="strips">
 
-          <section class="panel strip" aria-labelledby="stripBellTitle">
+          <section class="panel strip" id="stripBell" aria-labelledby="stripBellTitle">
             <header class="strip-head">
               <h2 class="panel-title" id="stripBellTitle">Csengő</h2>
               <span class="status" id="stripBellState" data-tone="off">Csend</span>
             </header>
-            <div class="strip-body strip-body-list">
-              <span class="field-label">Következő csengetés</span>
-              <div class="bell-next num" id="bellNextTime">–</div>
-              <div class="muted num" id="bellNextIn"></div>
-              <ol class="bell-list" id="bellList" aria-label="A mai csengetések"></ol>
+            <div class="strip-body">
+              <div class="meter-group">
+                <div class="scale vu-scale" aria-hidden="true">
+                  <span style="--at: 1">0</span><span style="--at: 0.9">−6</span><span style="--at: 0.8">−12</span><span style="--at: 0.6">−24</span><span style="--at: 0.4">−36</span><span style="--at: 0.2">−48</span><span style="--at: 0">−60</span>
+                </div>
+                <div class="meter" id="meterBell" role="meter" aria-label="Csengő jelszintje" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                  <div class="meter-fill" id="meterBellFill"></div>
+                </div>
+              </div>
+              <div class="scale fader-scale" aria-hidden="true">
+                <span style="--at: 1">100</span><span style="--at: 0.75">75</span><span style="--at: 0.5">50</span><span style="--at: 0.25">25</span><span style="--at: 0">0</span>
+              </div>
+              <input type="range" class="fader" id="mixerVolBell" min="0" max="100" step="1" value="100" aria-label="Csengő hangereje">
             </div>
-            <div class="strip-value"></div>
+            <output class="strip-value num" id="mixerVolBellVal" for="mixerVolBell">100%</output>
             <footer class="strip-foot">
               <div class="field">
-                <span class="field-label">Aktív rend</span>
-                <span class="strip-note" id="bellScheduleName">Nincs aktív rend</span>
+                <span class="field-label">Következő csengetés</span>
+                <div class="bell-next num" id="bellNextTime">–</div>
+                <div class="muted num" id="bellNextIn"></div>
               </div>
+              <div class="strip-note">Rend: <span id="bellScheduleName">nincs aktív rend</span></div>
+              <div class="strip-warning" id="bellMutedWarning" hidden>A csengő hangereje 0%: a csengetés nem hallható.</div>
             </footer>
           </section>
 
@@ -94,6 +105,14 @@
               <span class="status" id="stripMusicState" data-tone="off">Nincs zene</span>
             </header>
             <div class="strip-body">
+              <div class="meter-group">
+                <div class="scale vu-scale" aria-hidden="true">
+                  <span style="--at: 1">0</span><span style="--at: 0.9">−6</span><span style="--at: 0.8">−12</span><span style="--at: 0.6">−24</span><span style="--at: 0.4">−36</span><span style="--at: 0.2">−48</span><span style="--at: 0">−60</span>
+                </div>
+                <div class="meter" id="meterMusic" role="meter" aria-label="Zene jelszintje" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                  <div class="meter-fill" id="meterMusicFill"></div>
+                </div>
+              </div>
               <div class="scale fader-scale" aria-hidden="true">
                 <span style="--at: 1">100</span><span style="--at: 0.75">75</span><span style="--at: 0.5">50</span><span style="--at: 0.25">25</span><span style="--at: 0">0</span>
               </div>
@@ -120,6 +139,14 @@
               <span class="badge-onair" id="stripMicOnAir" hidden>Adásban</span>
             </header>
             <div class="strip-body">
+              <div class="meter-group">
+                <div class="scale vu-scale" aria-hidden="true">
+                  <span style="--at: 1">0</span><span style="--at: 0.9">−6</span><span style="--at: 0.8">−12</span><span style="--at: 0.6">−24</span><span style="--at: 0.4">−36</span><span style="--at: 0.2">−48</span><span style="--at: 0">−60</span>
+                </div>
+                <div class="meter" id="meterMic" role="meter" aria-label="Mikrofon jelszintje" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                  <div class="meter-fill" id="meterMicFill"></div>
+                </div>
+              </div>
               <div class="scale fader-scale" aria-hidden="true">
                 <span style="--at: 1">100</span><span style="--at: 0.75">75</span><span style="--at: 0.5">50</span><span style="--at: 0.25">25</span><span style="--at: 0">0</span>
               </div>
@@ -164,16 +191,22 @@
                 <span class="field-label">Kimenet</span>
                 <span class="strip-note" id="masterOutputName">–</span>
               </div>
-              <div class="strip-legend"><span>Jelszint: dBFS</span><span>Fader: 100% = névleges</span></div>
+              <div class="strip-legend"><span>Mérők: dBFS, a csatornákon fader után</span><span>Master fader: 100% = névleges</span></div>
               <div class="strip-warning" id="mixerWarning" hidden>A kimeneti eszköz nem érhető el, a hang csak a streamen szól.</div>
             </footer>
           </section>
         </div>
 
-        <section class="panel mixer-events" aria-labelledby="mixerEventsTitle">
-          <header class="panel-header"><h2 class="panel-title" id="mixerEventsTitle">Események</h2></header>
-          <pre class="log" id="mixerLogBox"></pre>
-        </section>
+        <div class="mixer-aside">
+          <section class="panel" aria-labelledby="bellListTitle">
+            <header class="panel-header"><h2 class="panel-title" id="bellListTitle">Mai csengetések</h2></header>
+            <ol class="bell-list" id="bellList" aria-labelledby="bellListTitle"></ol>
+          </section>
+          <section class="panel" aria-labelledby="mixerEventsTitle">
+            <header class="panel-header"><h2 class="panel-title" id="mixerEventsTitle">Események</h2></header>
+            <pre class="log" id="mixerLogBox"></pre>
+          </section>
+        </div>
       </div>
     </section>
 

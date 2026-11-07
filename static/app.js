@@ -142,7 +142,7 @@ function renderBellStrip(nowSeconds) {
     ? activeSchedule.events.filter((e) => parseClock(e.time) !== null).sort((a, b) => a.time.localeCompare(b.time))
     : [];
   const next = activeSchedule ? nextBellFrom(nowSeconds, events) : null;
-  document.getElementById("bellScheduleName").textContent = activeSchedule ? activeSchedule.name : "Nincs aktív rend";
+  document.getElementById("bellScheduleName").textContent = activeSchedule ? activeSchedule.name : "nincs aktív rend";
   document.getElementById("bellNextTime").textContent = next ? formatHM(next.at) : "–";
   document.getElementById("bellNextIn").textContent = next
     ? (next.tomorrow ? "holnap, " : "") + formatCountdown(next.in) + " múlva"
@@ -178,7 +178,7 @@ function renderBellStrip(nowSeconds) {
     li.append(time, file);
     list.appendChild(li);
   }
-  if (nextItem) list.scrollTop = Math.max(0, nextItem.offsetTop - list.offsetTop - 32);
+  if (nextItem) list.scrollTop = Math.max(0, nextItem.offsetTop - 32);
 }
 
 function renderClock(data) {
@@ -1176,6 +1176,7 @@ const mixerVolumeDebounce = {};
 
 const MIXER_VOLUMES = [
   { key: "master", slider: "mixerVolMaster", label: "mixerVolMasterVal" },
+  { key: "bell", slider: "mixerVolBell", label: "mixerVolBellVal" },
   { key: "music", slider: "mixerVolMusic", label: "mixerVolMusicVal" },
   { key: "mic", slider: "mixerVolMic", label: "mixerVolMicVal" },
 ];
@@ -1197,13 +1198,13 @@ const MUSIC_STRIP_STATE = {
 // Jelszintmero: a csucsertek (0..1) dBFS-ben, -60..0 dB skalan
 const METER_FLOOR_DB = -60;
 
-function renderMeter(level) {
+function renderMeter(meterId, level) {
   const db = level > 0 ? 20 * Math.log10(level) : -Infinity;
   const shown = Math.max(0, Math.min(1, (db - METER_FLOOR_DB) / -METER_FLOOR_DB));
-  const fill = document.getElementById("meterFill");
+  const fill = document.getElementById(meterId + "Fill");
   fill.style.height = (shown * 100).toFixed(1) + "%";
   fill.classList.toggle("hot", level >= 0.95);
-  const meter = document.getElementById("meter");
+  const meter = document.getElementById(meterId);
   meter.setAttribute("aria-valuenow", (shown * 100).toFixed(0));
   meter.setAttribute("aria-valuetext", Number.isFinite(db) ? Math.round(db) + " dBFS" : "nincs jel");
 }
@@ -1230,9 +1231,20 @@ function renderMixer(data) {
 
   const flags = data.flags || [];
 
-  // Csengo csatorna
+  // Csatornameroik: forrasonkent a sajat fader utan; a master a kimenet
+  const levels = data.levels || {};
+  renderMeter("meterBell", levels.bell || 0);
+  renderMeter("meterMusic", levels.music || 0);
+  renderMeter("meterMic", levels.mic || 0);
+
+  // Csengo csatorna: 0%-on figyelmeztet, mert akkor az utemezett csengetes sem hallhato
   const bellOn = data.running && flags.includes("BELL");
-  setStatus("stripBellState", bellOn ? "ok" : "off", bellOn ? "Szól" : "Csend");
+  const bellMuted = data.volume && data.volume.bell === 0;
+  if (bellOn) setStatus("stripBellState", "ok", "Szól");
+  else if (bellMuted) setStatus("stripBellState", "warn", "Némítva");
+  else setStatus("stripBellState", "off", "Csend");
+  document.getElementById("bellMutedWarning").hidden = !bellMuted;
+  document.getElementById("stripBell").classList.toggle("is-muted", !!bellMuted);
 
   // Mikrofon csatorna: adasban piros jelzes a csatornan es a felso savban
   const live = !!data.mic_live;
@@ -1248,7 +1260,7 @@ function renderMixer(data) {
   if (!data.running) setStatus("stripMasterState", "off", "Leállítva");
   else if (data.output_ok === false) setStatus("stripMasterState", "warn", "Nincs kimenet");
   else setStatus("stripMasterState", "ok", "Él");
-  renderMeter(data.level || 0);
+  renderMeter("meter", data.level || 0);
 
   // Zene csatorna: a zene fulon inditott szam itt is latszik
   const music = data.music || {};

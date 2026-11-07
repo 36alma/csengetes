@@ -777,21 +777,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .meter-fill.hot { background: var(--warn); }
 
-/* Csengo sav: kovetkezo csengetes es a mai rend */
-.strip-body-list {
-  flex-direction: column;
-  justify-content: flex-start;
-  gap: var(--space-1);
-  padding: var(--space-4);
-}
+/* Csengo sav: kovetkezo csengetes; a mai rend az oldalso oszlopban */
 .bell-next { font-size: var(--text-display); font-weight: 600; line-height: 1.1; }
 .bell-list {
+  position: relative;
   flex: 1;
   min-height: 0;
-  margin: var(--space-3) 0 0;
-  padding: var(--space-2) 0 0;
+  margin: 0;
+  padding: var(--space-2);
   overflow-y: auto;
-  border-top: 1px solid var(--border);
   list-style: none;
 }
 .bell-list li {
@@ -804,13 +798,18 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .bell-list li.past { color: var(--text-muted); }
 .bell-list li.next { background: var(--accent-weak); box-shadow: inset 2px 0 0 var(--accent); font-weight: 600; }
 .bell-list .file { min-width: 0; overflow: hidden; color: var(--text-muted); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
-.bell-list .empty { padding: var(--space-4) 0; text-align: left; }
+.bell-list .empty { padding: var(--space-4) var(--space-2); text-align: left; }
+.strip.is-muted .strip-value { color: var(--warn); }
 
-/* Esemenynaplo a mixer mellett, ha van eleg hely */
-.mixer-events { display: none; }
+/* Mai csengetesek es esemenynaplo a mixer mellett, ha van eleg hely */
+.mixer-aside { display: none; }
 @media (min-width: 1600px) {
   .mixer-layout { grid-template-columns: minmax(0, 1120px) minmax(280px, 1fr); }
-  .mixer-events { display: flex; }
+  .mixer-aside { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-4); min-height: 0; }
+}
+/* kis ablakban a meroskala elmarad, a mero es a fader marad */
+@media (max-width: 880px) {
+  .vu-scale { display: none; }
 }
 
 /* ---------- Utemezes ---------- */
