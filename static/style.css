@@ -941,6 +941,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .pending-panel { flex-shrink: 0; max-height: 220px; }
 .devices-panel { flex: 1; min-height: 160px; }
+.devices-panel .table { min-width: 1080px; }
 .col-ip { width: 136px; }
 .col-short { width: 96px; }
 .col-status { width: 160px; }

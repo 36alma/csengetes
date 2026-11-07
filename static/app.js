@@ -143,9 +143,9 @@ function renderBellStrip(nowSeconds) {
     : [];
   const next = activeSchedule ? nextBellFrom(nowSeconds, events) : null;
   document.getElementById("bellScheduleName").textContent = activeSchedule ? activeSchedule.name : "Nincs aktív rend";
-  document.getElementById("bellNextTime").textContent = next ? (next.tomorrow ? "holnap " : "") + formatHM(next.at) : "–";
+  document.getElementById("bellNextTime").textContent = next ? formatHM(next.at) : "–";
   document.getElementById("bellNextIn").textContent = next
-    ? formatCountdown(next.in) + " múlva"
+    ? (next.tomorrow ? "holnap, " : "") + formatCountdown(next.in) + " múlva"
     : activeSchedule ? "Nincs csengetés a rendben" : "Válassz rendet az Ütemezés oldalon";
 
   const key = [activeSchedule && activeSchedule.name, events.map((e) => e.time + e.file).join(","), next && next.at, next && next.tomorrow].join("|");
