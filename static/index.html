@@ -65,58 +65,117 @@
 
   <main class="content">
 
-    <!-- Mixer -->
+    <!-- Mixer: csatornasavok -->
     <section class="page active" id="panel-mixer">
-      <div class="form-card mixer-card">
-        <div class="mixer-head">
-          <label class="switch-row">
-            <span class="switch">
-              <input type="checkbox" id="mixerPower">
-              <span class="switch-slider"></span>
-            </span>
-            <span class="switch-label" id="mixerPowerLabel">Mikrofon: ki</span>
-          </label>
-        </div>
-        <div class="meter" role="meter" aria-label="Jelszint" aria-valuemin="0" aria-valuemax="100" id="meter">
-          <div class="meter-fill" id="meterFill"></div>
-        </div>
-        <div class="source-chips">
-          <span class="chip" id="chipBell">Csengő</span>
-          <span class="chip" id="chipMusic">Zene</span>
-          <span class="chip" id="chipMic">Mikrofon</span>
-        </div>
-        <div class="mixer-warning" id="mixerWarning" hidden>A kimeneti eszköz nem érhető el, a hang csak a streamen szól.</div>
-      </div>
+      <div class="mixer-layout">
+        <div class="strips">
 
-      <div class="form-card mixer-volumes">
-        <div class="volume-row">
-          <span class="field-label bold">Fő hangerő</span>
-          <input type="range" class="slider" id="mixerVolMaster" min="0" max="200" step="1" value="100">
-          <span class="volume-value" id="mixerVolMasterVal">100%</span>
-        </div>
-        <div class="volume-row">
-          <span class="field-label bold">Zene</span>
-          <input type="range" class="slider" id="mixerVolMusic" min="0" max="100" step="1" value="100">
-          <span class="volume-value" id="mixerVolMusicVal">100%</span>
-        </div>
-        <div class="volume-row">
-          <span class="field-label bold">Mikrofon</span>
-          <input type="range" class="slider" id="mixerVolMic" min="0" max="100" step="1" value="100">
-          <span class="volume-value" id="mixerVolMicVal">100%</span>
-        </div>
-      </div>
+          <section class="panel strip" aria-labelledby="stripBellTitle">
+            <header class="strip-head">
+              <h2 class="panel-title" id="stripBellTitle">Csengő</h2>
+              <span class="status" id="stripBellState" data-tone="off">Csend</span>
+            </header>
+            <div class="strip-body strip-body-list">
+              <span class="field-label">Következő csengetés</span>
+              <div class="bell-next num" id="bellNextTime">–</div>
+              <div class="muted num" id="bellNextIn"></div>
+              <ol class="bell-list" id="bellList" aria-label="A mai csengetések"></ol>
+            </div>
+            <div class="strip-value"></div>
+            <footer class="strip-foot">
+              <div class="field">
+                <span class="field-label">Aktív rend</span>
+                <span class="strip-note" id="bellScheduleName">Nincs aktív rend</span>
+              </div>
+            </footer>
+          </section>
 
-      <div class="form-card">
-        <div class="form-row">
-          <span class="field-label bold">Mikrofon</span>
-          <select class="select" id="mixerInputSelect" style="width:420px"></select>
+          <section class="panel strip" aria-labelledby="stripMusicTitle">
+            <header class="strip-head">
+              <h2 class="panel-title" id="stripMusicTitle">Zene</h2>
+              <span class="status" id="stripMusicState" data-tone="off">Nincs zene</span>
+            </header>
+            <div class="strip-body">
+              <div class="scale fader-scale" aria-hidden="true">
+                <span style="--at: 1">100</span><span style="--at: 0.75">75</span><span style="--at: 0.5">50</span><span style="--at: 0.25">25</span><span style="--at: 0">0</span>
+              </div>
+              <input type="range" class="fader" id="mixerVolMusic" min="0" max="100" step="1" value="100" aria-label="Zene hangereje">
+            </div>
+            <output class="strip-value num" id="mixerVolMusicVal" for="mixerVolMusic">100%</output>
+            <footer class="strip-foot">
+              <div class="field">
+                <label class="field-label" for="mixerMusicSelect">Zeneszám</label>
+                <select class="select" id="mixerMusicSelect"></select>
+              </div>
+              <div class="strip-buttons">
+                <button class="btn" id="btnMixerMusicPlay"><svg class="icon"><use href="#i-play"/></svg>Lejátszás</button>
+                <button class="btn" id="btnMixerMusicStop"><svg class="icon"><use href="#i-stop"/></svg>Leállítás</button>
+              </div>
+              <div class="strip-note" id="mixerMusicNow">Nincs lejátszás</div>
+            </footer>
+          </section>
+
+          <section class="panel strip" id="stripMic" aria-labelledby="stripMicTitle">
+            <header class="strip-head">
+              <h2 class="panel-title" id="stripMicTitle">Mikrofon</h2>
+              <span class="status" id="stripMicState" data-tone="off">Ki</span>
+              <span class="badge-onair" id="stripMicOnAir" hidden>Adásban</span>
+            </header>
+            <div class="strip-body">
+              <div class="scale fader-scale" aria-hidden="true">
+                <span style="--at: 1">100</span><span style="--at: 0.75">75</span><span style="--at: 0.5">50</span><span style="--at: 0.25">25</span><span style="--at: 0">0</span>
+              </div>
+              <input type="range" class="fader" id="mixerVolMic" min="0" max="100" step="1" value="100" aria-label="Mikrofon hangereje">
+            </div>
+            <output class="strip-value num" id="mixerVolMicVal" for="mixerVolMic">100%</output>
+            <footer class="strip-foot">
+              <div class="field">
+                <label class="field-label" for="mixerInputSelect">Bemenet</label>
+                <select class="select" id="mixerInputSelect"></select>
+              </div>
+              <label class="onair-toggle">
+                <input type="checkbox" id="mixerPower">
+                <svg class="icon"><use href="#i-mic"/></svg>
+                <span id="mixerPowerLabel">Adás indítása</span>
+              </label>
+            </footer>
+          </section>
+
+          <section class="panel strip" aria-labelledby="stripMasterTitle">
+            <header class="strip-head">
+              <h2 class="panel-title" id="stripMasterTitle">Master</h2>
+              <span class="status" id="stripMasterState" data-tone="off">Leállítva</span>
+            </header>
+            <div class="strip-body">
+              <div class="meter-group">
+                <div class="scale vu-scale" aria-hidden="true">
+                  <span style="--at: 1">0</span><span style="--at: 0.9">−6</span><span style="--at: 0.8">−12</span><span style="--at: 0.6">−24</span><span style="--at: 0.4">−36</span><span style="--at: 0.2">−48</span><span style="--at: 0">−60</span>
+                </div>
+                <div class="meter" id="meter" role="meter" aria-label="Kimeneti jelszint" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                  <div class="meter-fill" id="meterFill"></div>
+                </div>
+              </div>
+              <div class="scale fader-scale" aria-hidden="true">
+                <span style="--at: 1">200</span><span style="--at: 0.75">150</span><span class="unity" style="--at: 0.5">100</span><span style="--at: 0.25">50</span><span style="--at: 0">0</span>
+              </div>
+              <input type="range" class="fader" id="mixerVolMaster" min="0" max="200" step="1" value="100" aria-label="Master hangerő (100% = névleges)">
+            </div>
+            <output class="strip-value num" id="mixerVolMasterVal" for="mixerVolMaster">100%</output>
+            <footer class="strip-foot">
+              <div class="field">
+                <span class="field-label">Kimenet</span>
+                <span class="strip-note" id="masterOutputName">–</span>
+              </div>
+              <div class="strip-legend"><span>Jelszint: dBFS</span><span>Fader: 100% = névleges</span></div>
+              <div class="strip-warning" id="mixerWarning" hidden>A kimeneti eszköz nem érhető el, a hang csak a streamen szól.</div>
+            </footer>
+          </section>
         </div>
-        <div class="form-row">
-          <span class="field-label bold">Zene</span>
-          <select class="select" id="mixerMusicSelect" style="width:420px"></select>
-          <button class="btn" id="btnMixerMusicPlay">Lejátszás</button>
-          <button class="btn" id="btnMixerMusicStop">Leállítás</button>
-        </div>
+
+        <section class="panel mixer-events" aria-labelledby="mixerEventsTitle">
+          <header class="panel-header"><h2 class="panel-title" id="mixerEventsTitle">Események</h2></header>
+          <pre class="log" id="mixerLogBox"></pre>
+        </section>
       </div>
     </section>
 

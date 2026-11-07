@@ -85,6 +85,9 @@ function renderOutputSummary(mixer) {
     tone = "ok";
   }
   setStatus("sbOutput", tone, `Kimenet: ${outputDeviceName}${suffix}`);
+  const masterName = document.getElementById("masterOutputName");
+  masterName.textContent = outputDeviceName;
+  masterName.title = outputDeviceName;
 }
 
 // ---------- felso sav: ora es kovetkezo csengetes ----------
@@ -128,6 +131,53 @@ function formatCountdown(seconds) {
   return (h ? h + ":" + pad2(m) : String(m)) + ":" + pad2(s);
 }
 
+// Mixer / Csengo sav: kovetkezo csengetes es a rend mai esemenyei
+let bellListKey = null;
+
+function renderBellStrip(nowSeconds) {
+  const events = activeSchedule
+    ? activeSchedule.events.filter((e) => parseClock(e.time) !== null).sort((a, b) => a.time.localeCompare(b.time))
+    : [];
+  const next = activeSchedule ? nextBellFrom(nowSeconds, events) : null;
+  document.getElementById("bellScheduleName").textContent = activeSchedule ? activeSchedule.name : "Nincs aktív rend";
+  document.getElementById("bellNextTime").textContent = next ? (next.tomorrow ? "holnap " : "") + formatHM(next.at) : "–";
+  document.getElementById("bellNextIn").textContent = next
+    ? formatCountdown(next.in) + " múlva"
+    : activeSchedule ? "Nincs csengetés a rendben" : "Válassz rendet az Ütemezés oldalon";
+
+  const key = [activeSchedule && activeSchedule.name, events.map((e) => e.time + e.file).join(","), next && next.at, next && next.tomorrow].join("|");
+  if (key === bellListKey) return;
+  bellListKey = key;
+  const list = document.getElementById("bellList");
+  list.innerHTML = "";
+  let nextItem = null;
+  if (activeSchedule && !events.length) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = "Ebben a rendben még nincs csengetés.";
+    list.appendChild(li);
+  }
+  for (const ev of events) {
+    const at = parseClock(ev.time);
+    const li = document.createElement("li");
+    if (next && at === next.at) {
+      li.className = "next";
+      nextItem = nextItem || li;
+    } else if (next && (next.tomorrow || at < next.at)) {
+      li.className = "past";
+    }
+    const time = document.createElement("span");
+    time.textContent = ev.time;
+    const file = document.createElement("span");
+    file.className = "file";
+    file.textContent = ev.file;
+    file.title = ev.file;
+    li.append(time, file);
+    list.appendChild(li);
+  }
+  if (nextItem) list.scrollTop = Math.max(0, nextItem.offsetTop - list.offsetTop - 32);
+}
+
 function renderClock(data) {
   const [date, time] = String(data.now || "").split(" ");
   if (!time) return;
@@ -137,6 +187,9 @@ function renderClock(data) {
   document.getElementById("clockDate").textContent = `${y}. ${pad2(mo)}. ${pad2(d)}., ${weekday}`;
   document.getElementById("clockSource").textContent = data.mode === "ntp" ? "NTP-idő" : "Kézi idő";
 
+  const nowSeconds = parseClock(time);
+  renderBellStrip(nowSeconds);
+
   const timeEl = document.getElementById("nextBellTime");
   const countdownEl = document.getElementById("nextBellCountdown");
   if (!activeSchedule) {
@@ -144,7 +197,7 @@ function renderClock(data) {
     countdownEl.textContent = "";
     return;
   }
-  const next = nextBellFrom(parseClock(time), activeSchedule.events);
+  const next = nextBellFrom(nowSeconds, activeSchedule.events);
   if (!next) {
     timeEl.textContent = "Nincs esemény";
     countdownEl.textContent = "";
@@ -165,7 +218,8 @@ function setSliderFill(slider) {
 }
 
 document.addEventListener("input", (e) => {
-  if (e.target && e.target.classList && e.target.classList.contains("slider")) setSliderFill(e.target);
+  const cl = e.target && e.target.classList;
+  if (cl && (cl.contains("slider") || cl.contains("fader"))) setSliderFill(e.target);
 });
 
 // ---------- alert popup ----------
@@ -683,12 +737,18 @@ document.getElementById("volumeSlider").addEventListener("input", (e) => {
 
 // ---------- Naplo ful ----------
 
+// a doboz aljan marad, ha a felhasznalo nem gorgetett feljebb
+function fillLog(box, lines, emptyText) {
+  const wasAtBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
+  box.textContent = lines.length ? lines.join("\n") : emptyText;
+  if (wasAtBottom) box.scrollTop = box.scrollHeight;
+}
+
 async function loadLogs() {
   const data = await get("/api/logs?limit=300");
-  const box = document.getElementById("logBox");
-  const wasAtBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
-  box.textContent = (data.lines || []).join("\n");
-  if (wasAtBottom) box.scrollTop = box.scrollHeight;
+  const lines = data.lines || [];
+  fillLog(document.getElementById("logBox"), lines, "A napló üres.");
+  fillLog(document.getElementById("mixerLogBox"), lines.slice(-60), "Még nincs esemény.");
 }
 
 setInterval(loadLogs, 2000);
@@ -1083,6 +1143,32 @@ const MIXER_VOLUMES = [
 
 let lastMixerData = null;
 
+const MUSIC_BUSY = ["pending", "downloading", "playing"];
+const MUSIC_STRIP_STATE = {
+  idle: "Nincs zene",
+  pending: "Indul",
+  downloading: "Letöltés",
+  playing: "Szól",
+  skipped: "Kihagyva",
+  done: "Vége",
+  stopped: "Leállítva",
+  error: "Hiba",
+};
+
+// Jelszintmero: a csucsertek (0..1) dBFS-ben, -60..0 dB skalan
+const METER_FLOOR_DB = -60;
+
+function renderMeter(level) {
+  const db = level > 0 ? 20 * Math.log10(level) : -Infinity;
+  const shown = Math.max(0, Math.min(1, (db - METER_FLOOR_DB) / -METER_FLOOR_DB));
+  const fill = document.getElementById("meterFill");
+  fill.style.height = (shown * 100).toFixed(1) + "%";
+  fill.classList.toggle("hot", level >= 0.95);
+  const meter = document.getElementById("meter");
+  meter.setAttribute("aria-valuenow", (shown * 100).toFixed(0));
+  meter.setAttribute("aria-valuetext", Number.isFinite(db) ? Math.round(db) + " dBFS" : "nincs jel");
+}
+
 // A mixer allapota egy helyen, a felso savban latszik.
 function setMixerStateView(tone, text) {
   const el = document.getElementById("headerMixer");
@@ -1103,29 +1189,48 @@ function renderMixer(data) {
   renderOutputSummary(data);
   document.getElementById("onAirBadge").hidden = !data.mic_live;
 
-  const power = document.getElementById("mixerPower");
-  if (document.activeElement !== power) power.checked = data.mic_live;
-  document.getElementById("mixerPowerLabel").textContent = data.mic_live ? "Mikrofon: élő" : "Mikrofon: ki";
-  document.getElementById("mixerWarning").hidden = data.output_ok !== false;
-
-  // a jelszint gyenge jeleknel is latszodjon: gyokos skala
-  const shown = Math.min(1, Math.sqrt(data.level));
-  const fill = document.getElementById("meterFill");
-  fill.style.width = (shown * 100).toFixed(0) + "%";
-  fill.classList.toggle("hot", data.level >= 0.95);
-  document.getElementById("meter").setAttribute("aria-valuenow", (shown * 100).toFixed(0));
-
   const flags = data.flags || [];
-  document.getElementById("chipBell").classList.toggle("on", data.running && flags.includes("BELL"));
-  document.getElementById("chipMusic").classList.toggle("on", data.running && flags.includes("PLAYING_MUSIC"));
-  document.getElementById("chipMic").classList.toggle("on", data.mic_live && flags.includes("PLAYING_MIC"));
 
-  // a zene fulon indított szám a mixerben is látszik
+  // Csengo csatorna
+  const bellOn = data.running && flags.includes("BELL");
+  setStatus("stripBellState", bellOn ? "ok" : "off", bellOn ? "Szól" : "Csend");
+
+  // Mikrofon csatorna: adasban piros jelzes a csatornan es a felso savban
+  const live = !!data.mic_live;
+  const power = document.getElementById("mixerPower");
+  if (document.activeElement !== power) power.checked = live;
+  document.getElementById("mixerPowerLabel").textContent = live ? "Adás leállítása" : "Adás indítása";
+  document.getElementById("stripMic").classList.toggle("is-onair", live);
+  document.getElementById("stripMicOnAir").hidden = !live;
+  document.getElementById("stripMicState").hidden = live;
+
+  // Master csatorna: kimenet allapota es jelszint
+  document.getElementById("mixerWarning").hidden = data.output_ok !== false;
+  if (!data.running) setStatus("stripMasterState", "off", "Leállítva");
+  else if (data.output_ok === false) setStatus("stripMasterState", "warn", "Nincs kimenet");
+  else setStatus("stripMasterState", "ok", "Él");
+  renderMeter(data.level || 0);
+
+  // Zene csatorna: a zene fulon inditott szam itt is latszik
   const music = data.music || {};
   const musicSelect = document.getElementById("mixerMusicSelect");
   if (music.status === "playing" && music.current && document.activeElement !== musicSelect) {
     musicSelect.value = music.current;
   }
+  const musicOn = data.running && flags.includes("PLAYING_MUSIC");
+  const musicBusy = MUSIC_BUSY.includes(music.status);
+  setStatus("stripMusicState", musicOn ? "ok" : music.status === "error" ? "warn" : "off", musicOn ? "Szól" : MUSIC_STRIP_STATE[music.status] || "Nincs zene");
+  // lejatszas kozben a Lejatszas gomb tiltott (masik szamra valtani tovabbra is lehet)
+  document.getElementById("btnMixerMusicPlay").disabled = !musicSelect.value || (musicBusy && music.current === musicSelect.value);
+  document.getElementById("btnMixerMusicStop").disabled = !musicBusy;
+  let now = "Nincs lejátszás";
+  if (music.status === "playing" && music.current) now = "Most szól: " + music.current;
+  else if (music.status === "error") now = "Hiba" + (music.error ? ": " + music.error : "");
+  else if (musicBusy) now = MUSIC_STATUS_TEXT[music.status];
+  else if (!musicSelect.value) now = "Nincs kiválasztott zene";
+  const nowEl = document.getElementById("mixerMusicNow");
+  nowEl.textContent = now;
+  nowEl.title = now;
 
   for (const v of MIXER_VOLUMES) {
     const slider = document.getElementById(v.slider);
@@ -1221,6 +1326,15 @@ async function loadMixerMusic() {
   const selected = select.value;
   select.innerHTML = "";
   const files = data && !data.error && Array.isArray(data.files) ? data.files : [];
+  if (files.length === 0) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Nincs letöltött zene";
+    opt.disabled = true;
+    select.appendChild(opt);
+    select.value = "";
+    return;
+  }
   for (const name of files) {
     const opt = document.createElement("option");
     opt.value = name;

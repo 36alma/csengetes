@@ -49,6 +49,7 @@
   /* Vezerlok merete */
   --control-height: 32px;
   --control-height-sm: 28px;
+  --control-height-lg: 40px;
 
   /* Keret */
   --nav-width: 184px;
@@ -76,6 +77,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 ::placeholder { color: var(--text-disabled); }
 
 [hidden] { display: none !important; }
+
+* { scrollbar-color: var(--border-control) transparent; scrollbar-width: thin; }
 
 :focus { outline: none; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -599,6 +602,216 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .topbar-meta { display: none; }
 }
 
+/* ---------- Mixer: csatornasavok ---------- */
+
+.mixer-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  flex: 1;
+  min-height: 0;
+}
+.strips {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 0 var(--space-4);
+  width: 100%;
+  max-width: 1120px;
+  min-height: 0;
+}
+/* a sorok (fejlec, fader, ertek, lab) minden savban egy vonalban vannak */
+.strip { display: grid; grid-row: 1 / -1; grid-template-rows: subgrid; grid-template-columns: minmax(0, 1fr); overflow: hidden; }
+.strip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.strip-body {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 160px;
+  padding: var(--space-4) var(--space-3) var(--space-3);
+}
+.strip-value {
+  display: block;
+  padding: 0 var(--space-4) var(--space-3);
+  font-size: var(--text-title);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: center;
+}
+.strip-foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+.strip-note {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.strip-buttons { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: var(--space-2); }
+.strip-legend { display: flex; flex-direction: column; color: var(--text-muted); font-size: var(--text-label); }
+.strip-warning {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-control);
+  color: var(--warn);
+}
+
+/* Mikrofon adasban: piros keret, felso csik es jelzes */
+.strip.is-onair { border-color: var(--onair); }
+.strip.is-onair .strip-head { box-shadow: inset 0 3px 0 var(--onair); }
+
+.onair-toggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: var(--control-height-lg);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+}
+.onair-toggle input { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
+.onair-toggle:hover { background: var(--surface-hover); }
+.onair-toggle:has(input:checked) { border-color: var(--onair); background: var(--onair); color: var(--on-onair); }
+.onair-toggle:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Fader: fuggoleges csuszka; a kitoltes a fogantyu kozepeig er (--p: 0..1) */
+.fader {
+  --p: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  flex-shrink: 0;
+  width: 32px;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.fader::-webkit-slider-runnable-track {
+  width: 6px;
+  height: 100%;
+  margin: 0 auto;
+  border: 1px solid var(--border-control);
+  background: linear-gradient(to top,
+    var(--text-muted) calc(8px + (100% - 16px) * var(--p)),
+    var(--bg) 0);
+}
+.fader::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 28px;
+  height: 16px;
+  margin-left: -11px;
+  border: 1px solid var(--bg);
+  border-radius: var(--radius-control);
+  /* a fogantyu kozepvonala jelzi a pontos erteket */
+  background: linear-gradient(to bottom, var(--text) 6px, var(--bg) 6px 8px, var(--text) 8px);
+}
+.fader:hover::-webkit-slider-thumb { border-color: var(--text-muted); }
+
+/* Skala a fader es a jelszintmero mellett */
+.scale {
+  position: relative;
+  flex-shrink: 0;
+  width: 32px;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+}
+.scale span {
+  position: absolute;
+  right: 0;
+  top: calc(8px + (100% - 16px) * (1 - var(--at)));
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  line-height: 1;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+.scale span::after { content: ""; width: 4px; height: 1px; background: var(--border-control); }
+.scale .unity { color: var(--text); font-weight: 600; }
+.scale .unity::after { background: var(--text); }
+.vu-scale span { top: calc((1 - var(--at)) * 100%); }
+
+/* Jelszintmero (VU): dBFS skala, -60..0 dB */
+.meter-group { display: flex; gap: var(--space-1); height: 100%; margin-right: var(--space-3); }
+.meter {
+  position: relative;
+  flex-shrink: 0;
+  width: 12px;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border-control);
+  background: var(--bg);
+}
+.meter-fill {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 0;
+  background: var(--ok);
+  transition: height 120ms linear;
+}
+.meter-fill.hot { background: var(--warn); }
+
+/* Csengo sav: kovetkezo csengetes es a mai rend */
+.strip-body-list {
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-4);
+}
+.bell-next { font-size: var(--text-display); font-weight: 600; line-height: 1.1; }
+.bell-list {
+  flex: 1;
+  min-height: 0;
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2) 0 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  list-style: none;
+}
+.bell-list li {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.bell-list li.past { color: var(--text-muted); }
+.bell-list li.next { background: var(--accent-weak); box-shadow: inset 2px 0 0 var(--accent); font-weight: 600; }
+.bell-list .file { min-width: 0; overflow: hidden; color: var(--text-muted); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.bell-list .empty { padding: var(--space-4) 0; text-align: left; }
+
+/* Esemenynaplo a mixer mellett, ha van eleg hely */
+.mixer-events { display: none; }
+@media (min-width: 1600px) {
+  .mixer-layout { grid-template-columns: minmax(0, 1120px) minmax(280px, 1fr); }
+  .mixer-events { display: flex; }
+}
+
 /* ---------- Regi oldal-layout (a fulek atallitasaig) ---------- */
 
 .toolbar { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
@@ -679,35 +892,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 #panel-music .form-row { align-items: center; }
 #musicListbox option.now-playing { color: var(--ok); font-weight: 600; }
 
-.mixer-state { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--text-muted); }
-.mixer-state-text { color: var(--text); font-size: var(--text-title); font-weight: 600; }
-.state-dot { width: 8px; height: 8px; border-radius: var(--radius-control); background: var(--off); }
-.mixer-state[data-state="on"] .state-dot { background: var(--ok); }
-.mixer-card { display: flex; flex-direction: column; gap: var(--space-4); }
-.mixer-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
-.meter { height: 12px; overflow: hidden; border: 1px solid var(--border-control); background: var(--bg); }
-.meter-fill { width: 0; height: 100%; background: var(--ok); }
-.meter-fill.hot { background: var(--warn); }
-.source-chips { display: flex; gap: var(--space-2); }
-.chip {
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius-control);
-  color: var(--text-muted);
-  font-size: var(--text-label);
-  font-weight: 600;
-}
-.chip.on { border-color: var(--ok); color: var(--ok); }
-.mixer-warning {
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--warn);
-  border-radius: var(--radius-control);
-  color: var(--warn);
-}
-.mixer-volumes { display: flex; flex-direction: column; gap: var(--space-3); }
-.volume-row { display: grid; grid-template-columns: 112px 1fr 56px; align-items: center; gap: var(--space-3); }
-.volume-value { color: var(--text-muted); font-variant-numeric: tabular-nums; text-align: right; }
-#panel-mixer .form-card .form-row + .form-row { margin-top: var(--space-3); }
 
 .devices-table th:last-child { width: 360px; }
 .devices-table td:last-child { overflow: visible; white-space: normal; }
