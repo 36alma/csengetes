@@ -544,6 +544,16 @@ document.getElementById("btnNewSchedule").addEventListener("click", async () => 
 
 // ---------- Media ful ----------
 
+// Ures select: egyetlen, nem valaszthato opcio a magyarazattal
+function addPlaceholderOption(select, text) {
+  const opt = document.createElement("option");
+  opt.value = "";
+  opt.textContent = text;
+  opt.disabled = true;
+  select.appendChild(opt);
+  select.value = "";
+}
+
 async function loadMediaList() {
   const data = await get("/api/media");
   defaultMediaFile = data.default || "";
@@ -556,6 +566,7 @@ async function loadMediaList() {
     opt.textContent = f;
     listbox.appendChild(opt);
   });
+  document.getElementById("mediaEmpty").hidden = data.files.length > 0;
 
   const eventFile = document.getElementById("eventFile");
   const prevValue = eventFile.value;
@@ -568,6 +579,7 @@ async function loadMediaList() {
   });
   if (prevValue && data.files.includes(prevValue)) eventFile.value = prevValue;
   else if (defaultMediaFile && data.files.includes(defaultMediaFile)) eventFile.value = defaultMediaFile;
+  if (!data.files.length) addPlaceholderOption(eventFile, "Nincs csengőhang");
 
   const defaultSelect = document.getElementById("defaultMediaSelect");
   defaultSelect.innerHTML = "";
@@ -578,6 +590,7 @@ async function loadMediaList() {
     defaultSelect.appendChild(opt);
   });
   if (defaultMediaFile && data.files.includes(defaultMediaFile)) defaultSelect.value = defaultMediaFile;
+  if (!data.files.length) addPlaceholderOption(defaultSelect, "Nincs csengőhang");
 }
 
 document.getElementById("btnRefreshMedia").addEventListener("click", loadMediaList);
@@ -625,7 +638,7 @@ document.getElementById("btnSaveDefaultMedia").addEventListener("click", async (
   defaultMediaFile = filename;
   const eventFile = document.getElementById("eventFile");
   if (!eventFile.value) eventFile.value = filename;
-  await modal.alert(filename, { title: "Alapértelmezett csengőhang mentve" });
+  await modal.alert(filename, { title: "Alapértelmezett csengőhang beállítva" });
 });
 
 async function loadUploadLimit() {
@@ -1040,9 +1053,9 @@ setInterval(() => {
 
 const MUSIC_STATUS_TEXT = {
   idle: "Nincs aktív zene",
-  pending: "Indul...",
-  downloading: "Letöltés...",
-  playing: "Lejátszás folyamatban",
+  pending: "Indul…",
+  downloading: "Letöltés…",
+  playing: "Szól",
   skipped: "Kihagyva: nem fér bele a következő csengetésig",
   done: "Lejátszás kész",
   stopped: "Leállítva",
@@ -1061,6 +1074,7 @@ async function loadMusicList() {
     box.appendChild(opt);
   }
   if (selected) box.value = selected;
+  document.getElementById("musicEmpty").hidden = box.options.length > 0;
   markCurrentMusic();
 }
 
@@ -1084,7 +1098,9 @@ async function loadMusicStatus() {
   currentMusic = data.status === "playing" ? data.current : null;
   if (currentMusic) text += " – " + currentMusic;
   markCurrentMusic();
-  document.getElementById("musicStatus").textContent = "Állapot: " + text;
+  setStatus("musicStatus", data.status === "playing" ? "ok" : data.status === "error" ? "warn" : "off", text);
+  document.getElementById("musicStatus").title = text;
+  document.getElementById("btnMusicStop").disabled = !MUSIC_BUSY.includes(data.status);
   // letoltes utan frissitjuk a listat
   if (lastMusicStatus === "downloading" && data.status !== "downloading") loadMusicList();
   lastMusicStatus = data.status;
@@ -1145,7 +1161,7 @@ document.getElementById("btnMusicDelete").addEventListener("click", async () => 
 document.getElementById("btnMusicRefresh").addEventListener("click", loadMusicList);
 
 setInterval(() => {
-  if (document.getElementById("panel-music").classList.contains("active")) loadMusicStatus();
+  if (isPageActive("library")) loadMusicStatus();
 }, 2000);
 
 // ---------- Mixer ful ----------

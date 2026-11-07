@@ -49,8 +49,7 @@
   <nav class="nav" aria-label="Fő navigáció">
     <button class="nav-item active" data-tab="mixer" aria-current="page" title="Mixer"><svg class="icon"><use href="#i-mixer"/></svg><span class="nav-text">Mixer</span></button>
     <button class="nav-item" data-tab="schedule" title="Ütemezés"><svg class="icon"><use href="#i-schedule"/></svg><span class="nav-text">Ütemezés</span></button>
-    <button class="nav-item" data-tab="media" title="Média"><svg class="icon"><use href="#i-bell"/></svg><span class="nav-text">Média</span></button>
-    <button class="nav-item" data-tab="music" title="Zene"><svg class="icon"><use href="#i-library"/></svg><span class="nav-text">Zene</span></button>
+    <button class="nav-item" data-tab="library" title="Hangfájlok"><svg class="icon"><use href="#i-library"/></svg><span class="nav-text">Hangfájlok</span></button>
     <button class="nav-item" data-tab="devices" title="Eszközök"><svg class="icon"><use href="#i-speaker"/></svg><span class="nav-text">Eszközök</span></button>
     <button class="nav-item" data-tab="log" title="Napló"><svg class="icon"><use href="#i-log"/></svg><span class="nav-text">Napló</span></button>
     <button class="nav-item nav-bottom" data-tab="time" title="Idő"><svg class="icon"><use href="#i-schedule"/></svg><span class="nav-text">Idő</span></button>
@@ -239,85 +238,81 @@
       </div>
     </section>
 
-    <!-- Media -->
-    <section class="page" id="panel-media">
-      <div class="toolbar">
-        <button class="btn btn-primary" id="btnUploadMedia">Hangfájl feltöltése...</button>
-        <input type="file" id="fileInput" accept=".mp3,.wav,.ogg" style="display:none">
-        <button class="btn" id="btnRefreshMedia">Lista frissítése</button>
+    <!-- Hangfajlok: csengohangok es zenek -->
+    <section class="page" id="panel-library">
+      <div class="page-header">
+        <h1 class="page-title">Hangfájlok</h1>
       </div>
 
-      <div class="table-card list-card">
-        <select class="listbox" id="mediaListbox" size="14"></select>
-      </div>
+      <div class="library-layout">
+        <section class="panel" aria-labelledby="bellSoundsTitle">
+          <header class="panel-header">
+            <h2 class="panel-title" id="bellSoundsTitle">Csengőhangok</h2>
+            <div class="panel-actions">
+              <button class="btn btn-icon" id="btnRefreshMedia" title="Lista frissítése" aria-label="Csengőhangok frissítése"><svg class="icon"><use href="#i-refresh"/></svg></button>
+              <button class="btn" id="btnUploadMedia"><svg class="icon"><use href="#i-upload"/></svg>Feltöltés</button>
+              <input type="file" id="fileInput" accept=".mp3,.wav,.ogg" hidden>
+            </div>
+          </header>
+          <div class="panel-body list-area">
+            <select class="listbox" id="mediaListbox" size="8" aria-label="Csengőhangok"></select>
+            <div class="list-empty" id="mediaEmpty" hidden>Még nincs csengőhang. Tölts fel egy MP3, WAV vagy OGG fájlt.</div>
+          </div>
+          <footer class="panel-footer">
+            <button class="btn" id="btnPlaySelected"><svg class="icon"><use href="#i-play"/></svg>Próbalejátszás</button>
+            <label class="switch-row">
+              <span class="switch"><input type="checkbox" id="forcePlay"><span class="switch-slider"></span></span>
+              <span class="switch-label">Megszakítja a most szóló hangot</span>
+            </label>
+          </footer>
+          <footer class="panel-footer">
+            <div class="field grow">
+              <label class="field-label" for="defaultMediaSelect">Alapértelmezett csengőhang</label>
+              <div class="control-row">
+                <select class="select" id="defaultMediaSelect"></select>
+                <button class="btn" id="btnSaveDefaultMedia">Beállítás</button>
+              </div>
+            </div>
+          </footer>
+        </section>
 
-      <div class="media-bottom">
-        <button class="btn" id="btnPlaySelected">Kijelölt lejátszása (manuális teszt)</button>
-        <label class="switch-row">
-          <span class="switch">
-            <input type="checkbox" id="forcePlay">
-            <span class="switch-slider"></span>
-          </span>
-          <span class="switch-label">Force lejátszás (megszakítja a folyamatban lévőt)</span>
-        </label>
-      </div>
-
-      <div class="form-card">
-        <div class="form-row">
-          <span class="field-label bold">Alapértelmezett csengőhang</span>
-          <select class="select" id="defaultMediaSelect" style="width:260px"></select>
-          <button class="btn" id="btnSaveDefaultMedia">Mentés alapértelmezettként</button>
-        </div>
-      </div>
-
-      <div class="form-card">
-        <div class="form-row">
-          <span class="field-label bold">Max. feltölthető fájlméret (MB)</span>
-          <input class="input" id="uploadLimitInput" type="number" min="1" max="1024" step="1" style="width:100px">
-          <button class="btn" id="btnSaveUploadLimit">Mentés</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- Zene -->
-    <section class="page" id="panel-music">
-      <div class="form-card">
-        <div class="form-row">
-          <span class="field-label bold">YouTube link</span>
-          <input class="input" id="musicUrl" type="text" placeholder="https://www.youtube.com/watch?v=..." style="flex:1; min-width:280px">
-          <button class="btn btn-primary" id="btnMusicPlay">Letöltés és lejátszás</button>
-        </div>
-        <div class="form-row">
-          <label class="switch-row">
-            <span class="switch">
-              <input type="checkbox" id="musicForce">
-              <span class="switch-slider"></span>
-            </span>
-            <span class="switch-label">Akkor is induljon, ha nem fér bele a szünetbe</span>
-          </label>
-          <label class="switch-row">
-            <span class="switch">
-              <input type="checkbox" id="musicNowPlay">
-              <span class="switch-slider"></span>
-            </span>
-            <span class="switch-label">Megszakítja a most szóló hangot</span>
-          </label>
-        </div>
-        <div class="current-time" id="musicStatus">Állapot: -</div>
-      </div>
-
-      <div class="toolbar">
-        <button class="btn" id="btnMusicRefresh">Lista frissítése</button>
-        <button class="btn" id="btnMusicStop">Leállítás</button>
-      </div>
-
-      <div class="table-card list-card">
-        <select class="listbox" id="musicListbox" size="10"></select>
-      </div>
-
-      <div class="media-bottom">
-        <button class="btn" id="btnMusicPlayFile">Kijelölt lejátszása</button>
-        <button class="btn btn-danger" id="btnMusicDelete">Kijelölt törlése</button>
+        <section class="panel" aria-labelledby="musicTitle">
+          <header class="panel-header">
+            <h2 class="panel-title" id="musicTitle">Zenék</h2>
+            <span class="status" id="musicStatus" data-tone="off">Nincs aktív zene</span>
+            <div class="panel-actions">
+              <button class="btn btn-icon" id="btnMusicRefresh" title="Lista frissítése" aria-label="Zenék frissítése"><svg class="icon"><use href="#i-refresh"/></svg></button>
+            </div>
+          </header>
+          <div class="panel-body music-download">
+            <div class="field">
+              <label class="field-label" for="musicUrl">YouTube-link</label>
+              <div class="control-row">
+                <input class="input" id="musicUrl" type="text" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off">
+                <button class="btn" id="btnMusicPlay"><svg class="icon"><use href="#i-download"/></svg>Letöltés és lejátszás</button>
+              </div>
+            </div>
+            <div class="switch-group">
+              <label class="switch-row">
+                <span class="switch"><input type="checkbox" id="musicForce"><span class="switch-slider"></span></span>
+                <span class="switch-label">Akkor is induljon, ha nem fér bele a szünetbe</span>
+              </label>
+              <label class="switch-row">
+                <span class="switch"><input type="checkbox" id="musicNowPlay"><span class="switch-slider"></span></span>
+                <span class="switch-label">Megszakítja a most szóló hangot</span>
+              </label>
+            </div>
+          </div>
+          <div class="panel-body list-area">
+            <select class="listbox" id="musicListbox" size="8" aria-label="Letöltött zenék"></select>
+            <div class="list-empty" id="musicEmpty" hidden>Még nincs letöltött zene. Illessz be fent egy YouTube-linket.</div>
+          </div>
+          <footer class="panel-footer">
+            <button class="btn" id="btnMusicPlayFile"><svg class="icon"><use href="#i-play"/></svg>Lejátszás</button>
+            <button class="btn" id="btnMusicStop"><svg class="icon"><use href="#i-stop"/></svg>Leállítás</button>
+            <button class="btn btn-danger push-right" id="btnMusicDelete"><svg class="icon"><use href="#i-trash"/></svg>Törlés</button>
+          </footer>
+        </section>
       </div>
     </section>
 
@@ -340,6 +335,14 @@
         </div>
 
         <div class="current-time" id="currentTime">Aktuális számított idő: -</div>
+      </div>
+
+      <div class="form-card">
+        <div class="form-row">
+          <span class="field-label bold">Max. feltölthető fájlméret (MB)</span>
+          <input class="input" id="uploadLimitInput" type="number" min="1" max="1024" step="1" style="width:100px">
+          <button class="btn" id="btnSaveUploadLimit">Mentés</button>
+        </div>
       </div>
     </section>
 

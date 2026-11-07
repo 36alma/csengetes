@@ -834,6 +834,41 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .schedule-layout > .panel:first-child { min-height: 280px; }
 }
 
+/* ---------- Hangfajlok ---------- */
+
+.library-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  flex: 1;
+  min-height: 0;
+}
+.list-area { position: relative; flex: 1; min-height: 160px; }
+.list-area + .list-area,
+.music-download + .list-area { padding-top: 0; }
+.list-area .listbox { flex: 1; }
+.list-empty {
+  position: absolute;
+  inset: var(--space-4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+  color: var(--text-muted);
+  text-align: center;
+  pointer-events: none;
+}
+.music-download { flex-shrink: 0; }
+.switch-group { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); }
+.panel-footer .field.grow,
+.field.grow { flex: 1; }
+.push-right { margin-left: auto; }
+#musicListbox option.now-playing { color: var(--ok); font-weight: 600; }
+.panel-header .status { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 900px) {
+  .library-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* ---------- Regi oldal-layout (a fulek atallitasaig) ---------- */
 
 .toolbar { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
@@ -861,8 +896,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .form-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2); }
 
-.list-card { padding: var(--space-2); }
-.media-bottom { display: flex; align-items: center; justify-content: center; gap: var(--space-4); flex-shrink: 0; }
 
 .mode-row { display: flex; gap: var(--space-5); margin-bottom: var(--space-2); }
 .radio-row { display: flex; align-items: center; gap: var(--space-2); cursor: pointer; }
@@ -905,9 +938,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .time-grid { grid-template-columns: 1fr; }
 }
 
-#panel-music .form-card { display: flex; flex-direction: column; gap: var(--space-3); }
-#panel-music .form-row { align-items: center; }
-#musicListbox option.now-playing { color: var(--ok); font-weight: 600; }
 
 
 .devices-table th:last-child { width: 360px; }
