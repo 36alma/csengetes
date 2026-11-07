@@ -257,6 +257,68 @@ def test_bell_ignores_music_volume(tmp_path):
         mixer.stop()
 
 
+def test_bell_volume_validation():
+    mixer = Mixer(mic=FakeMic())
+    assert mixer.bell_volume == 1.0
+    with pytest.raises(ValueError):
+        mixer.change_bell_volume(1.5)
+    with pytest.raises(ValueError):
+        mixer.change_bell_volume(-0.1)
+    mixer.change_bell_volume(0.25)
+    assert mixer.bell_volume == 0.25
+
+
+def test_bell_volume_scales_only_the_bell(tmp_path):
+    mixer = Mixer(mic=FakeMic())
+    mixer.change_volume(0.0)  # a mikrofon nem zavar
+    mixer.change_bell_volume(0.0)
+    mixer.start()
+    try:
+        mixer.play_file(_wav(tmp_path, "csengo.wav", 2), "bell")
+        assert _peak_level(mixer, 0.4) < 0.01  # nemitott csengo
+        mixer.change_bell_volume(0.5)
+        assert 0.15 < _peak_level(mixer, 0.4) <= 0.21  # 0.4 amplitudo * 0.5
+        mixer.play_file(_wav(tmp_path, "zene.wav", 2), "music")
+        _peak_level(mixer, 0.7)  # lecsenges
+        assert _peak_level(mixer, 0.3) > 0.3  # a zenet a csengo hangereje nem halkitja
+    finally:
+        mixer.stop()
+
+
+def test_source_levels_follow_each_channel_after_its_fader(tmp_path):
+    mixer = Mixer(mic=FakeMic())
+    assert mixer.levels == {"bell": 0.0, "music": 0.0, "mic": 0.0}
+    mixer.change_music_volume(0.5)
+    mixer.set_mic_live(True)
+    mixer.start()
+    try:
+        mixer.play_file(_wav(tmp_path, "zene.wav", 3), "music")
+        assert wait_until(lambda: mixer.levels["music"] > 0.15 and mixer.levels["mic"] > 0.2)
+        levels = mixer.levels
+        assert levels["music"] <= 0.21  # fader utan: 0.4 * 0.5
+        assert levels["bell"] == 0.0
+        mixer.change_volume(0.0)  # mikrofon fader le
+        assert wait_until(lambda: mixer.levels["mic"] < 0.01)
+        mixer.play_file(_wav(tmp_path, "csengo.wav", 1), "bell")
+        assert wait_until(lambda: mixer.levels["bell"] > 0.3)
+        assert wait_until(lambda: mixer.levels["music"] < 0.01)  # a csengo megszakitotta a zenet
+    finally:
+        mixer.stop()
+    assert mixer.levels == {"bell": 0.0, "music": 0.0, "mic": 0.0}
+
+
+def test_source_levels_are_measured_before_master():
+    mixer = Mixer(mic=FakeMic())
+    mixer.change_master_volume(0.0)
+    mixer.set_mic_live(True)
+    mixer.start()
+    try:
+        assert wait_until(lambda: mixer.levels["mic"] > 0.2)
+        assert mixer.level < 0.01  # a kimenet a master utan csendes
+    finally:
+        mixer.stop()
+
+
 def test_mic_is_off_by_default_and_not_mixed():
     mixer = Mixer(mic=FakeMic())
     assert mixer.mic_live is False

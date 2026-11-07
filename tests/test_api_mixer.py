@@ -22,11 +22,17 @@ from services.mixer.mixing import SAMPLE_RATE
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     monkeypatch.setattr(api_mixer, "MUSIC_DIR", str(tmp_path))
+    monkeypatch.setattr(api_mixer.config, "BELL_VOLUME_PERCENT", 100.0)
     mixer = Mixer(mic=FakeMic())
     mixer.start()
     music_player = MixerPlayer(mixer, "music", PlayGate(), allowed_roots=[str(tmp_path)])
-    state = {"authorized": True}
-    ctx = SimpleNamespace(mixer=mixer, music_player=music_player, time_src=None, music_session=MusicSession(), ws_authorized=lambda ws: state["authorized"])
+    state = {"authorized": True, "saved": 0}
+
+    def save_config():
+        state["saved"] += 1
+
+    ctx = SimpleNamespace(mixer=mixer, music_player=music_player, time_src=None, music_session=MusicSession(),
+                          ws_authorized=lambda ws: state["authorized"], save_config=save_config)
     app = FastAPI()
     app.include_router(api_mixer.create_router(ctx))
     yield SimpleNamespace(client=TestClient(app), mixer=mixer, state=state, music_dir=tmp_path)
@@ -38,8 +44,9 @@ def test_state_idle(env):
     assert data["running"] is True
     assert data["status"] == 0 and data["flags"] == []
     assert data["level"] == 0.0
+    assert data["levels"] == {"bell": 0.0, "music": 0.0, "mic": 0.0, "master": 0.0}
     assert data["mic_live"] is False and data["output_ok"] is True
-    assert data["volume"] == {"master": 1.0, "music": 1.0, "mic": 1.0}
+    assert data["volume"] == {"master": 1.0, "music": 1.0, "mic": 1.0, "bell": 1.0}
     assert data["stream"]["codec"] == "mp3"
 
 
@@ -52,6 +59,7 @@ def test_state_without_microphone_device(env):
 def test_mic_toggle_shows_signal_and_flag(env):
     assert env.client.post("/api/mixer/mic", json={"live": True}).json() == {"ok": True, "mic_live": True}
     assert wait_until(lambda: env.client.get("/api/mixer").json()["level"] > 0.0)
+    assert wait_until(lambda: env.client.get("/api/mixer").json()["levels"]["mic"] > 0.0)
     data = env.client.get("/api/mixer").json()
     assert data["mic_live"] is True and "PLAYING_MIC" in data["flags"]
     assert env.client.post("/api/mixer/mic", json={"live": False}).json()["mic_live"] is False
@@ -74,11 +82,21 @@ def test_mic_failure_is_503_and_stays_off(env):
 def test_volume_partial_and_validation(env):
     r = env.client.post("/api/mixer/volume", json={"master": 1.5, "mic": 0.5})
     assert r.status_code == 200
-    assert r.json()["volume"] == {"master": 1.5, "music": 1.0, "mic": 0.5}
+    assert r.json()["volume"] == {"master": 1.5, "music": 1.0, "mic": 0.5, "bell": 1.0}
     assert env.client.post("/api/mixer/volume", json={"music": 3}).status_code == 400
+    assert env.client.post("/api/mixer/volume", json={"bell": 1.5}).status_code == 400
     assert env.client.post("/api/mixer/volume", json={"master": "hang"}).status_code == 400
     assert env.client.post("/api/mixer/volume", json={}).status_code == 400
     assert env.mixer.master_volume == 1.5  # a hibas keres nem valtoztatott
+
+
+def test_bell_volume_is_set_and_saved(env):
+    r = env.client.post("/api/mixer/volume", json={"bell": 0.4})
+    assert r.status_code == 200 and r.json()["volume"]["bell"] == 0.4
+    assert env.mixer.bell_volume == 0.4
+    assert api_mixer.config.BELL_VOLUME_PERCENT == 40.0 and env.state["saved"] == 1
+    env.client.post("/api/mixer/volume", json={"master": 1.2})
+    assert env.state["saved"] == 1  # a tobbi hangero tovabbra sem kerul a configba
 
 
 def test_inputs_and_switch(env):

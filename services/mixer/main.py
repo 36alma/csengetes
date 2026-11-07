@@ -17,6 +17,7 @@ logger = logging.getLogger("csengetes")
 BITRATE_KBPS = 128
 LEVEL_DECAY = 0.85  # blokkonkenti lecsengés (~26 ms): a jelszint nem ugral, de gyorsan elhal
 KIND_FLAGS = {"music": MixerStatus.PLAYING_MUSIC, "bell": MixerStatus.BELL}
+SOURCES = ("bell", "music", "mic")  # a forrasonkenti jelszint kulcsai
 OUTPUT_RETRY_S = 5.0  # kiesett/meg nem nyithato helyi kimenet ujraprobalasa ennyi masodpercenkent
 
 
@@ -94,8 +95,12 @@ class Mixer():
         self.buffer = buffer if buffer is not None else PacketBuffer()
         self.master_volume = 1.0
         self.music_volume = 1.0
+        self.bell_volume = 1.0
         self.status = MixerStatus.IDLE
         self.level = 0.0  # kimeneti csucsertek 0..1, blokkonkent lecsengetve (a feluleti meronek)
+        # forrasonkenti csucsertek 0..1 a sajat hangero utan, a master elott (a csatornameroknek);
+        # blokkonkent uj dict, igy az olvaso mindig egy egyseges allapotot lat
+        self.levels: dict[str, float] = dict.fromkeys(SOURCES, 0.0)
         self._file: np.ndarray | None = None
         self._file_pos = 0
         self._playback: Playback | None = None
@@ -152,6 +157,11 @@ class Mixer():
         if volume < 0.0 or volume > 1.0:
             raise ValueError("Volume must be between 0.0 and 1.0")
         self.music_volume = volume
+
+    def change_bell_volume(self, volume: float):
+        if volume < 0.0 or volume > 1.0:
+            raise ValueError("Volume must be between 0.0 and 1.0")
+        self.bell_volume = volume
 
     def set_output_device(self, index: int | None) -> None:
         """Kimeneti eszkoz valtas: a keveroszal a kovetkezo blokk elott ujranyitja."""
@@ -296,6 +306,7 @@ class Mixer():
             self.stop_file()
             self.status = MixerStatus.IDLE
             self.level = 0.0
+            self.levels = dict.fromkeys(SOURCES, 0.0)
 
     def _next_file_block(self) -> tuple[np.ndarray | None, MixerStatus]:
         with self._file_lock:
@@ -311,6 +322,19 @@ class Mixer():
             if len(block) < BLOCK_SIZE:
                 block = np.pad(block, (0, BLOCK_SIZE - len(block)))
             return block, flag
+
+    def _update_levels(self, file_block, file_flag, file_volume, mic_block, mic_volume) -> None:
+        """Forrasonkenti csucsertek a sajat hangero utan (master elott), lecsengetve."""
+        def peak(block, volume):
+            return 0.0 if block is None else min(1.0, float(np.abs(block).max()) * volume)
+
+        current = {
+            "bell": peak(file_block, file_volume) if file_flag == MixerStatus.BELL else 0.0,
+            "music": peak(file_block, file_volume) if file_flag == MixerStatus.PLAYING_MUSIC else 0.0,
+            "mic": peak(mic_block, mic_volume),
+        }
+        previous = self.levels
+        self.levels = {key: max(current[key], previous[key] * LEVEL_DECAY) for key in SOURCES}
 
     def _run(self):
         encoder = lameenc.Encoder()
@@ -350,10 +374,12 @@ class Mixer():
                         status |= MixerStatus.PLAYING_MIC
                     self.status = status
 
-                    # a csengo hangereje nem fugg a zene csuszkatol
-                    file_volume = self.music_volume if file_flag == MixerStatus.PLAYING_MUSIC else 1.0
-                    pcm = mix_blocks(music, mic, file_volume, self.mic_volume, self.master_volume)
+                    # a csengonek es a zenenek kulon hangereje van
+                    file_volume = self.music_volume if file_flag == MixerStatus.PLAYING_MUSIC else self.bell_volume
+                    mic_volume = self.mic_volume
+                    pcm = mix_blocks(music, mic, file_volume, mic_volume, self.master_volume)
                     self.level = max(int(np.abs(pcm.astype(np.int32)).max()) / 32767, self.level * LEVEL_DECAY)
+                    self._update_levels(music, file_flag, file_volume, mic, mic_volume)
 
                     paced_by_output = False
                     if sink is not None:

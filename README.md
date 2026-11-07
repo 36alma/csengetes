@@ -36,7 +36,8 @@ A `config_example.json` alapján. A fontosabb kulcsok:
 | --- | --- |
 | `time_mode` | `ntp` vagy rendszeridő |
 | `active_schedule` | az aktív csengetési rend fájlja |
-| `volume_percent` | hangerő |
+| `volume_percent` | fő hangerő (master) |
+| `bell_volume_percent` | a csengő hangereje (0–100, a Mixer Csengő fadere állítja) |
 | `max_upload_mb` | feltöltési méretkorlát |
 | `device_port` | az eszközszerver portja (8766) |
 | `device_token_days` | eszköztoken élettartama napokban |

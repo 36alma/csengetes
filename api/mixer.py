@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, Body, WebSocket
 
+from config_store import config
 from model import MixerStatus
 from services.music import MusicService, download as music_download
 from services.mixer.main import BITRATE_KBPS
@@ -26,6 +27,7 @@ _VOLUMES = (
     ("master", "change_master_volume"),
     ("music", "change_music_volume"),
     ("mic", "change_volume"),
+    ("bell", "change_bell_volume"),
 )
 
 STREAM_INFO = {
@@ -101,7 +103,12 @@ def create_router(ctx: ApiContext) -> APIRouter:
     router = APIRouter()
 
     def volumes(mixer) -> dict:
-        return {"master": mixer.master_volume, "music": mixer.music_volume, "mic": mixer.mic_volume}
+        return {"master": mixer.master_volume, "music": mixer.music_volume, "mic": mixer.mic_volume, "bell": mixer.bell_volume}
+
+    def levels(mixer) -> dict:
+        data = {key: round(value, 3) for key, value in mixer.levels.items()}
+        data["master"] = round(mixer.level, 3)
+        return data
 
     @router.get("/api/mixer")
     def get_state():
@@ -112,6 +119,7 @@ def create_router(ctx: ApiContext) -> APIRouter:
             "status": status.value,
             "flags": [f.name for f in MixerStatus if f and f in status],
             "level": round(mixer.level, 3),
+            "levels": levels(mixer),
             "mic_live": mixer.mic_live,
             "output_ok": mixer.output_ok,
             "volume": volumes(mixer),
@@ -165,12 +173,16 @@ def create_router(ctx: ApiContext) -> APIRouter:
                 except (TypeError, ValueError):
                     return error("Ervenytelen ertek.")
         if not changes:
-            return error("Legalabb egy hangero kotelezo (master, music, mic).")
+            return error("Legalabb egy hangero kotelezo (master, music, mic, bell).")
         for apply, value in changes:
             try:
                 apply(value)
             except ValueError as exc:
                 return error(str(exc))
+        if "bell" in body:
+            # a csengo hangereje az ujrainditas utan is megmarad (az utemezett csengetesek miatt)
+            config.BELL_VOLUME_PERCENT = round(mixer.bell_volume * 100, 1)
+            ctx.save_config()
         return {"ok": True, "volume": volumes(mixer)}
 
     @router.post("/api/mixer/music")

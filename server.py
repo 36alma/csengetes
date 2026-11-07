@@ -81,6 +81,8 @@ if config.DEVICE_NAME:
     player.set_device(_device_index)
     config.DEVICE_INDEX = _device_index
 player.set_volume(config.VOLUME_PERCENT)
+# a mentett csengohangero; serult ertek eseten a hatarra igazitva
+mixer.change_bell_volume(min(100.0, max(0.0, config.BELL_VOLUME_PERCENT)) / 100.0)
 time_src.set_mode(config.TIME_MODE)
 
 _active_name = config.ACTIVE_SCHEDULE
@@ -159,6 +161,8 @@ def _run_server():
 
 def main():
     setup_logging()
+    if mixer.bell_volume == 0.0:
+        logger.warning("A csengo hangereje 0 szazalek: az utemezett csengetes nem lesz hallhato.")
     devices.replay_load_warnings()  # a devices.json betoltese a naplo beallitasa elott tortent
     os.makedirs(MEDIA_DIR, exist_ok=True)
     mixer.start()

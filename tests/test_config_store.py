@@ -34,3 +34,13 @@ def test_device_model_defaults():
 
     d = Device(id="d_1", name="Aula", ip_address="10.0.0.5", token_hash="h", token_expires_at=2, created_at=1)
     assert d.enabled is True and d.last_seen is None and d.mac_address is None
+
+
+def test_bell_volume_default_and_roundtrip(tmp_path, monkeypatch):
+    cfg, path = _fresh_config(tmp_path, monkeypatch)
+    assert cfg.BELL_VOLUME_PERCENT == 100.0
+    cfg.BELL_VOLUME_PERCENT = 35.0
+    cfg.save_config()
+    assert json.loads(path.read_text(encoding="utf-8"))["bell_volume_percent"] == 35.0
+    cfg2, _ = _fresh_config(tmp_path, monkeypatch)
+    assert cfg2.BELL_VOLUME_PERCENT == 35.0

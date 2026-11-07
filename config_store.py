@@ -15,6 +15,7 @@ class Config():
         self.TIME_MODE = str(self.setvalue("time_mode","ntp"))
         self.ACTIVE_SCHEDULE = str(self.setvalue("active_schedule","normal.json"))
         self.VOLUME_PERCENT = float(self.setvalue("volume_percent",100.0))
+        self.BELL_VOLUME_PERCENT = float(self.setvalue("bell_volume_percent",100.0))
         self.DEVICE_INDEX = self.setvalue("device_index",None)
         self.DEVICE_NAME = self.setvalue("device_name",None)
         self.DEFAULT_MEDIA_FILE = str(self.setvalue("default_media_file","csengo.mp3"))
@@ -46,6 +47,7 @@ class Config():
             "time_mode": self.TIME_MODE,
             "active_schedule": self.ACTIVE_SCHEDULE,
             "volume_percent": self.VOLUME_PERCENT,
+            "bell_volume_percent": self.BELL_VOLUME_PERCENT,
             "device_index": self.DEVICE_INDEX,
             "device_name": self.DEVICE_NAME,
             "default_media_file": self.DEFAULT_MEDIA_FILE,
