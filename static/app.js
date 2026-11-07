@@ -51,7 +51,7 @@ function showAlert(title, detail, success) {
   const titleEl = document.getElementById("alertTitle");
   const detailEl = document.getElementById("alertDetail");
   titleEl.textContent = title;
-  titleEl.style.color = success ? "var(--success-text)" : "var(--danger-text)";
+  titleEl.style.color = success ? "var(--ok)" : "var(--warn)";
   detailEl.textContent = detail;
   overlay.classList.add("visible");
 
@@ -78,7 +78,7 @@ const modal = (() => {
   function open({ title, message, input, okText, cancelText, danger, cancelable }) {
     return new Promise((resolve) => {
       titleEl.textContent = title;
-      titleEl.style.color = danger ? "var(--danger-text)" : "";
+      titleEl.style.color = danger ? "var(--warn)" : "";
       messageEl.textContent = message || "";
       inputEl.style.display = input ? "" : "none";
       inputEl.value = "";
