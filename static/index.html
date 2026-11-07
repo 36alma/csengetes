@@ -385,52 +385,87 @@
 
     <!-- Eszkozok -->
     <section class="page" id="panel-devices">
-      <div class="form-card">
-        <div class="form-row">
-          <span class="field-label bold">Eszköz neve</span>
-          <input class="input" id="deviceName" type="text" maxlength="64" placeholder="pl. Aula ESP32" style="width:200px">
-          <span class="field-label bold">IP-cím</span>
-          <input class="input" id="deviceIp" type="text" placeholder="192.168.1.50" style="width:150px">
-          <button class="btn btn-primary" id="btnDeviceSave">Hozzáadás</button>
-          <button class="btn" id="btnDeviceCancel" style="display:none">Mégse</button>
+      <div class="page-header">
+        <h1 class="page-title">Eszközök</h1>
+        <span class="muted">Hálózati (ESP32) hangszórók</span>
+      </div>
+
+      <div class="notice" id="pendingHint" hidden>Az eszköz-jelentkezés ki van kapcsolva. Bekapcsoláshoz állítsd be az enroll_key értéket a config.json fájlban (legalább 16 karakter).</div>
+
+      <section class="panel pending-panel" id="pendingCard" aria-labelledby="pendingTitle" hidden>
+        <header class="panel-header"><h2 class="panel-title" id="pendingTitle">Jóváhagyásra vár</h2></header>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr><th>UUID</th><th class="col-ip">IP-cím</th><th class="col-short">Verzió</th><th class="col-date">Utoljára látva</th><th>Állapot</th><th class="col-actions-sm">Műveletek</th></tr>
+            </thead>
+            <tbody id="pendingBody"></tbody>
+          </table>
         </div>
-        <div class="form-row">
-          <span class="field-label">MAC (nem kötelező)</span>
-          <input class="input" id="deviceMac" type="text" maxlength="64" style="width:150px">
-          <span class="field-label">Hostname</span>
-          <input class="input" id="deviceHostname" type="text" maxlength="64" style="width:150px">
-          <span class="field-label">Verzió</span>
-          <input class="input" id="deviceVersion" type="text" maxlength="64" style="width:100px">
+      </section>
+
+      <section class="panel devices-panel" aria-labelledby="devicesTitle">
+        <header class="panel-header"><h2 class="panel-title" id="devicesTitle">Hangszórók</h2></header>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr><th>Név</th><th class="col-ip">IP-cím</th><th class="col-status">Állapot</th><th class="col-date">Token lejár</th><th class="col-date">Utolsó kapcsolat</th><th class="col-actions">Műveletek</th></tr>
+            </thead>
+            <tbody id="devicesBody"></tbody>
+          </table>
         </div>
-        <div class="edit-hint" id="deviceEditHint"></div>
-      </div>
+      </section>
 
-      <div class="table-card" id="pendingCard" hidden>
-        <div class="field-label bold" style="padding:8px 12px">Jelentkezett, jóváhagyásra vár</div>
-        <table class="table devices-table">
-          <thead>
-            <tr><th>UUID</th><th>IP-cím</th><th>Verzió</th><th>Utoljára látva</th><th>Állapot</th><th>Műveletek</th></tr>
-          </thead>
-          <tbody id="pendingBody"></tbody>
-        </table>
-      </div>
-      <div class="edit-hint" id="pendingHint" hidden>Az eszköz-jelentkezés ki van kapcsolva: állítsd be az enroll_key értéket a config.json-ban (min. 16 karakter).</div>
+      <div class="devices-bottom">
+        <section class="panel" aria-labelledby="deviceFormTitle">
+          <header class="panel-header">
+            <h2 class="panel-title" id="deviceFormTitle">Eszköz hozzáadása</h2>
+            <span class="edit-hint" id="deviceEditHint"></span>
+          </header>
+          <div class="panel-body device-form">
+            <div class="field">
+              <label class="field-label" for="deviceName">Név</label>
+              <input class="input" id="deviceName" type="text" maxlength="64" placeholder="pl. Aula ESP32">
+            </div>
+            <div class="field">
+              <label class="field-label" for="deviceIp">IP-cím</label>
+              <input class="input num" id="deviceIp" type="text" placeholder="192.168.1.50">
+            </div>
+            <div class="field">
+              <label class="field-label" for="deviceMac">MAC-cím (nem kötelező)</label>
+              <input class="input num" id="deviceMac" type="text" maxlength="64">
+            </div>
+            <div class="field">
+              <label class="field-label" for="deviceHostname">Hostname (nem kötelező)</label>
+              <input class="input" id="deviceHostname" type="text" maxlength="64">
+            </div>
+            <div class="field">
+              <label class="field-label" for="deviceVersion">Verzió (nem kötelező)</label>
+              <input class="input" id="deviceVersion" type="text" maxlength="64">
+            </div>
+            <div class="editor-actions device-form-actions">
+              <button class="btn btn-primary" id="btnDeviceSave">Hozzáadás</button>
+              <button class="btn" id="btnDeviceCancel" style="display:none">Mégse</button>
+            </div>
+          </div>
+        </section>
 
-      <div class="table-card">
-        <table class="table devices-table">
-          <thead>
-            <tr><th>Név</th><th>IP-cím</th><th>Állapot</th><th>Token lejár</th><th>Utolsó kapcsolat</th><th>Műveletek</th></tr>
-          </thead>
-          <tbody id="devicesBody"></tbody>
-        </table>
+        <section class="panel" aria-labelledby="deviceLogTitle">
+          <header class="panel-header"><h2 class="panel-title" id="deviceLogTitle">Eszköznapló</h2></header>
+          <pre class="log" id="deviceLogBox"></pre>
+        </section>
       </div>
-
-      <pre class="log-box" id="deviceLogBox" style="min-height:140px; max-height:200px"></pre>
     </section>
 
     <!-- Naplo -->
     <section class="page" id="panel-log">
-      <pre class="log-box" id="logBox"></pre>
+      <div class="page-header">
+        <h1 class="page-title">Napló</h1>
+        <span class="muted">Az utolsó 300 sor, automatikusan frissül</span>
+      </div>
+      <section class="panel log-panel" aria-label="Rendszernapló">
+        <pre class="log" id="logBox"></pre>
+      </section>
     </section>
 
   </main>

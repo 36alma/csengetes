@@ -42,7 +42,10 @@ document.querySelectorAll(".nav-item").forEach((tab) => {
     document.querySelectorAll(".page").forEach((p) => p.classList.remove("active"));
     tab.classList.add("active");
     tab.setAttribute("aria-current", "page");
-    document.getElementById("panel-" + tab.dataset.tab).classList.add("active");
+    const page = document.getElementById("panel-" + tab.dataset.tab);
+    page.classList.add("active");
+    // a rejtett oldalon betoltott naplo megnyitaskor a legfrissebb soroknal alljon
+    page.querySelectorAll(".log").forEach((box) => { box.scrollTop = box.scrollHeight; });
   });
 });
 
@@ -398,7 +401,6 @@ function renderEventsTable({ resetScroll = false } = {}) {
     const tr = document.createElement("tr");
     const key = eventKey(ev);
     if (selectedRowKeys.has(key)) tr.classList.add("selected");
-    else if (i % 2 === 1) tr.classList.add("alt");
     const tdTime = document.createElement("td");
     tdTime.className = "num";
     tdTime.textContent = ev.time;
@@ -817,7 +819,7 @@ function statusBadge(text, tone) {
 let editingDeviceId = null;
 
 function formatDeviceTime(epoch) {
-  if (!epoch) return "-";
+  if (!epoch) return "–";
   return new Date(epoch * 1000).toLocaleString("hu-HU");
 }
 
@@ -838,6 +840,7 @@ function resetDeviceForm() {
   }
   document.getElementById("btnDeviceSave").textContent = "Hozzáadás";
   document.getElementById("btnDeviceCancel").style.display = "none";
+  document.getElementById("deviceFormTitle").textContent = "Eszköz hozzáadása";
   document.getElementById("deviceEditHint").textContent = "";
 }
 
@@ -850,7 +853,8 @@ function startEditDevice(device) {
   document.getElementById("deviceVersion").value = device.version || "";
   document.getElementById("btnDeviceSave").textContent = "Mentés";
   document.getElementById("btnDeviceCancel").style.display = "";
-  document.getElementById("deviceEditHint").textContent = "Szerkesztés: " + device.name;
+  document.getElementById("deviceFormTitle").textContent = "Eszköz szerkesztése";
+  document.getElementById("deviceEditHint").textContent = device.name;
 }
 
 function showToken(deviceName, token) {
@@ -921,9 +925,9 @@ async function deleteDevice(device) {
 function renderDevices(devices) {
   const body = document.getElementById("devicesBody");
   body.innerHTML = "";
+  if (!devices.length) emptyRow(body, 6, "Még nincs felvett eszköz. Add hozzá lent, vagy hagyd jóvá egy jelentkező eszközt.");
   devices.forEach((device, index) => {
     const tr = document.createElement("tr");
-    if (index % 2) tr.className = "alt";
     const cell = (text) => {
       const td = document.createElement("td");
       td.textContent = text;
@@ -931,12 +935,12 @@ function renderDevices(devices) {
       return td;
     };
     cell(device.name);
-    cell(device.ip_address);
+    cell(device.ip_address).className = "num";
     cell("").appendChild(statusBadge(DEVICE_STATUS_TEXT[device.status] || device.status, DEVICE_STATUS_TONE[device.status]));
     const soon = device.expiring_soon && device.status !== "expired";
     const expires = cell(formatDeviceTime(device.token_expires_at) + (soon ? " (hamarosan lejár)" : ""));
-    if (device.expiring_soon) expires.className = "expiring-soon";
-    cell(formatDeviceTime(device.last_seen));
+    expires.className = device.expiring_soon ? "num expiring-soon" : "num";
+    cell(formatDeviceTime(device.last_seen)).className = "num";
     const td = document.createElement("td");
     const actions = document.createElement("div");
     actions.className = "actions";
@@ -980,7 +984,6 @@ function renderPending(data) {
   body.innerHTML = "";
   pending.forEach((entry, index) => {
     const tr = document.createElement("tr");
-    if (index % 2) tr.className = "alt";
     const cell = (text) => {
       const td = document.createElement("td");
       td.textContent = text;
@@ -988,9 +991,9 @@ function renderPending(data) {
       return td;
     };
     cell(entry.uuid);
-    cell(entry.ip_address);
-    cell(entry.version || "-");
-    cell(formatDeviceTime(entry.last_seen));
+    cell(entry.ip_address).className = "num";
+    cell(entry.version || "–");
+    cell(formatDeviceTime(entry.last_seen)).className = "num";
     const statusText = entry.conflict ? PENDING_CONFLICT_TEXT[entry.conflict] || "Ütközés" : "Jóváhagyásra vár";
     cell("").appendChild(statusBadge(statusText, entry.conflict ? "warn" : "off"));
     const td = document.createElement("td");
@@ -1014,10 +1017,7 @@ async function loadDevices() {
 async function loadDeviceLog() {
   const data = await get("/api/logs?limit=1000");
   const lines = ((data && data.lines) || []).filter((line) => line.includes("[device:"));
-  const box = document.getElementById("deviceLogBox");
-  const wasAtBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
-  box.textContent = lines.slice(-200).join("\n");
-  if (wasAtBottom) box.scrollTop = box.scrollHeight;
+  fillLog(document.getElementById("deviceLogBox"), lines.slice(-200), "Még nincs eszközesemény a naplóban.");
 }
 
 document.getElementById("btnDeviceSave").addEventListener("click", async () => {

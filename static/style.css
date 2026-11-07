@@ -930,57 +930,45 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* ---------- Regi oldal-layout (a fulek atallitasaig) ---------- */
+/* ---------- Eszkozok ---------- */
 
-.toolbar { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
-
-.table-card {
-  display: flex;
-  flex-direction: column;
-  flex-grow: 1;
-  min-height: 220px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  border: 1px solid var(--border);
+.notice {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-panel);
-  background: var(--surface);
-}
-.table-card > .table { flex-shrink: 0; }
-
-
-.form-card {
-  flex-shrink: 0;
-  padding: var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-panel);
-  background: var(--surface);
-}
-.form-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2); }
-
-
-
-.log-box {
-  flex-grow: 1;
-  margin: 0;
-  font-family: var(--font);
-  padding: var(--space-4);
-  overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-panel);
-  background: var(--bg);
   color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.6;
-  white-space: pre-wrap;
+}
+.pending-panel { flex-shrink: 0; max-height: 220px; }
+.devices-panel { flex: 1; min-height: 160px; }
+.col-ip { width: 136px; }
+.col-short { width: 96px; }
+.col-status { width: 160px; }
+.col-date { width: 176px; }
+.col-actions { width: 320px; }
+.col-actions-sm { width: 176px; }
+.table td:has(> .actions) { overflow: visible; white-space: normal; }
+.actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.expiring-soon { color: var(--warn); }
+.devices-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  flex-shrink: 0;
+  height: 280px;
+}
+.device-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: var(--space-3) var(--space-4);
+}
+.device-form-actions { align-self: end; }
+.panel-header .edit-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 1000px) {
+  .devices-bottom { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .devices-bottom .log { min-height: 160px; }
 }
 
+/* ---------- Naplo ---------- */
 
-
-
-.devices-table th:last-child { width: 360px; }
-.devices-table td:last-child { overflow: visible; white-space: normal; }
-.devices-table .actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
-#panel-devices .form-row { align-items: center; }
-#panel-devices .form-row + .form-row { margin-top: var(--space-2); }
-.expiring-soon { color: var(--warn); font-weight: 600; }
-#pendingCard { flex-grow: 0; min-height: 0; max-height: 200px; }
+.log-panel { flex: 1; overflow: hidden; }
