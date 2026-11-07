@@ -36,10 +36,24 @@ function post(path, data) {
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
-    document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
+    document.querySelectorAll(".page").forEach((p) => p.classList.remove("active"));
     tab.classList.add("active");
     document.getElementById("panel-" + tab.dataset.tab).classList.add("active");
   });
+});
+
+// ---------- csuszkak kitoltese ----------
+// A csuszka savjanak kitoltott resze a --p (0..1) CSS valtozobol rajzolodik.
+
+function setSliderFill(slider) {
+  const min = Number(slider.min) || 0;
+  const max = Number(slider.max) || 100;
+  const p = max > min ? (Number(slider.value) - min) / (max - min) : 0;
+  slider.style.setProperty("--p", Math.min(1, Math.max(0, p)).toFixed(4));
+}
+
+document.addEventListener("input", (e) => {
+  if (e.target && e.target.classList && e.target.classList.contains("slider")) setSliderFill(e.target);
 });
 
 // ---------- alert popup ----------
@@ -516,6 +530,7 @@ async function loadOutputState() {
   const slider = document.getElementById("volumeSlider");
   slider.max = data.max_volume;
   slider.value = data.volume;
+  setSliderFill(slider);
   updateVolumeLabel(data.volume);
 }
 
@@ -558,6 +573,22 @@ const DEVICE_STATUS_TEXT = {
   disabled: "Letiltva",
   expired: "Lejárt token",
 };
+
+// StatusBadge tonus: zold = el, sarga = figyelmeztetes, szurke = inaktiv
+const DEVICE_STATUS_TONE = {
+  connected: "ok",
+  offline: "off",
+  disabled: "off",
+  expired: "warn",
+};
+
+function statusBadge(text, tone) {
+  const badge = document.createElement("span");
+  badge.className = "status";
+  badge.dataset.tone = tone || "off";
+  badge.textContent = text;
+  return badge;
+}
 
 let editingDeviceId = null;
 
@@ -632,7 +663,7 @@ function deviceActionButton(label, cls, handler) {
 async function rotateDevice(device) {
   const ok = await modal.confirm(
     `Új tokent kap: ${device.name}. A régi token azonnal érvénytelen, a futó kapcsolat megszakad, az eszközt újra be kell állítani.`,
-    { title: "Token rotálása", okText: "Rotálás", danger: true }
+    { title: "Új token kiadása", okText: "Új token", danger: true }
   );
   if (!ok) return;
   const result = await post(`/api/devices/${device.id}/rotate`);
@@ -677,9 +708,7 @@ function renderDevices(devices) {
     };
     cell(device.name);
     cell(device.ip_address);
-    const status = cell(DEVICE_STATUS_TEXT[device.status] || device.status);
-    status.className = "status-pill";
-    status.dataset.status = device.status;
+    cell("").appendChild(statusBadge(DEVICE_STATUS_TEXT[device.status] || device.status, DEVICE_STATUS_TONE[device.status]));
     const soon = device.expiring_soon && device.status !== "expired";
     const expires = cell(formatDeviceTime(device.token_expires_at) + (soon ? " (hamarosan lejár)" : ""));
     if (device.expiring_soon) expires.className = "expiring-soon";
@@ -687,10 +716,10 @@ function renderDevices(devices) {
     const td = document.createElement("td");
     const actions = document.createElement("div");
     actions.className = "actions";
-    actions.appendChild(deviceActionButton("Szerkesztés", "btn-ghost", () => startEditDevice(device)));
-    actions.appendChild(deviceActionButton(device.enabled ? "Letiltás" : "Engedélyezés", "btn-ghost", () => toggleDevice(device)));
-    actions.appendChild(deviceActionButton("Token rotálása", "btn-ghost", () => rotateDevice(device)));
-    actions.appendChild(deviceActionButton("Törlés", "btn-danger", () => deleteDevice(device)));
+    actions.appendChild(deviceActionButton("Szerkesztés", "btn-sm", () => startEditDevice(device)));
+    actions.appendChild(deviceActionButton(device.enabled ? "Letiltás" : "Engedélyezés", "btn-sm", () => toggleDevice(device)));
+    actions.appendChild(deviceActionButton("Új token", "btn-sm", () => rotateDevice(device)));
+    actions.appendChild(deviceActionButton("Törlés", "btn-sm btn-danger", () => deleteDevice(device)));
     td.appendChild(actions);
     tr.appendChild(td);
     body.appendChild(tr);
@@ -738,14 +767,13 @@ function renderPending(data) {
     cell(entry.ip_address);
     cell(entry.version || "-");
     cell(formatDeviceTime(entry.last_seen));
-    const status = cell(entry.conflict ? PENDING_CONFLICT_TEXT[entry.conflict] || "Ütközés" : "Jóváhagyásra vár");
-    status.className = "status-pill";
-    status.dataset.status = entry.conflict ? "expired" : "offline";
+    const statusText = entry.conflict ? PENDING_CONFLICT_TEXT[entry.conflict] || "Ütközés" : "Jóváhagyásra vár";
+    cell("").appendChild(statusBadge(statusText, entry.conflict ? "warn" : "off"));
     const td = document.createElement("td");
     const actions = document.createElement("div");
     actions.className = "actions";
-    if (!entry.conflict) actions.appendChild(deviceActionButton("Felvétel", "btn-primary", () => approvePending(entry)));
-    actions.appendChild(deviceActionButton("Elvetés", "btn-ghost", () => dismissPending(entry)));
+    if (!entry.conflict) actions.appendChild(deviceActionButton("Felvétel", "btn-sm btn-primary", () => approvePending(entry)));
+    actions.appendChild(deviceActionButton("Elvetés", "btn-sm", () => dismissPending(entry)));
     td.appendChild(actions);
     tr.appendChild(td);
     body.appendChild(tr);
@@ -970,6 +998,7 @@ function renderMixer(data) {
     // amig huzod / var a mentesre, nem irjuk felul
     if (document.activeElement !== slider && !mixerVolumeDebounce[v.key]) {
       slider.value = Math.round(data.volume[v.key] * 100);
+      setSliderFill(slider);
     }
     document.getElementById(v.label).textContent = slider.value + "%";
   }
