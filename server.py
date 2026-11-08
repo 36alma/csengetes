@@ -29,7 +29,7 @@ import scheduler as scheduler_mod
 import time_source
 from logger_setup import setup_logging
 from device_server import DeviceServer
-from services.devices import DeviceStore, EnrollListener, Enrollment, Presence, log_expiring
+from services.devices import DeviceStore, DeviceTelemetry, EnrollListener, Enrollment, Presence, log_expiring
 from services.mixer import Mixer, MixerPlayer, PlayGate
 from services.mixer.output import open_output_stream
 
@@ -60,7 +60,8 @@ time_src = time_source.TimeSource(ntp_server=config.NTP_SERVER)
 scheduler = scheduler_mod.Scheduler(time_src, player)
 devices = DeviceStore(token_days=config.DEVICE_TOKEN_DAYS)
 presence = Presence()
-device_server = DeviceServer(mixer, devices, presence, DEVICE_HOST, config.DEVICE_PORT)
+telemetry = DeviceTelemetry()
+device_server = DeviceServer(mixer, devices, presence, DEVICE_HOST, config.DEVICE_PORT, telemetry)
 enrollment = Enrollment(devices, config.ENROLL_KEY, config.ENROLL_CIDR)
 enroll_listener = EnrollListener(enrollment, DEVICE_HOST, config.ENROLL_PORT)
 _stop_expiry = threading.Event()
@@ -145,6 +146,7 @@ register_api(
         devices=devices,
         presence=presence,
         enrollment=enrollment,
+        telemetry=telemetry,
     ),
 )
 
