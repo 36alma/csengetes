@@ -940,16 +940,67 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .pending-panel { flex-shrink: 0; max-height: 220px; }
 .devices-panel { flex: 1; min-height: 160px; }
-.devices-panel .table { min-width: 1080px; }
+.devices-panel .table { min-width: 1320px; }
+/* Keskeny ablakban kartya-elrendezes: soronkent egy kartya, vizszintes gorgetes nelkul */
+@media (max-width: 1400px) {
+  .devices-panel .table { min-width: 0; table-layout: auto; }
+  .devices-panel .table thead { display: none; }
+  .devices-panel .table,
+  .devices-panel .table tbody { display: block; }
+  .devices-panel .table tbody tr:not(.empty-row) {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: var(--space-2) var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border);
+  }
+  .devices-panel .table tbody tr:not(.empty-row) td {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    height: auto;
+    padding: 0;
+    border: 0;
+    white-space: normal;
+    overflow: visible;
+  }
+  .devices-panel .table td[data-label]::before {
+    content: attr(data-label);
+    color: var(--text-muted);
+    font-size: var(--text-label);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .devices-panel .table td.cell-name { font-weight: 600; grid-column: 1 / -1; }
+  .devices-panel .table td.cell-actions { grid-column: 1 / -1; }
+  .devices-panel .table tbody tr.selected td:first-child,
+  .devices-panel .table tbody tr.editing td:first-child { box-shadow: none; }
+}
 .col-ip { width: 136px; }
 .col-short { width: 96px; }
 .col-status { width: 160px; }
+.col-buffer { width: 240px; }
 .col-date { width: 176px; }
 .col-actions { width: 320px; }
 .col-actions-sm { width: 176px; }
 .table td:has(> .actions) { overflow: visible; white-space: normal; }
 .actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .expiring-soon { color: var(--warn); }
+.buffer-state { display: flex; align-items: center; gap: var(--space-2); }
+.buffer-state.stale { opacity: 0.5; }
+.buffer-bar {
+  flex-shrink: 0;
+  width: 64px;
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-control);
+  background: var(--bg);
+}
+.buffer-fill { display: block; height: 100%; background: var(--ok); }
+.buffer-fill.low { background: var(--warn); }
+.buffer-warn { color: var(--warn); }
+.panel-actions .select[hidden] { display: none; }
 .devices-bottom {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -972,4 +1023,84 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ---------- Naplo ---------- */
 
-.log-panel { flex: 1; overflow: hidden; }
+.log-panel { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+.log-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.log-search { flex: 1 1 220px; min-width: 160px; max-width: 360px; }
+.log-levels { display: flex; gap: var(--space-1); }
+.log-level.is-active {
+  color: var(--text);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 100vmax var(--accent-weak);
+}
+.log-range { width: auto; }
+.log-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-body);
+  cursor: pointer;
+}
+
+.log-rows { padding: var(--space-2) 0; white-space: normal; }
+.log-day {
+  position: sticky;
+  top: calc(-1 * var(--space-2));
+  padding: var(--space-1) var(--space-4);
+  background: var(--surface);
+  border-block: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--text-label);
+  letter-spacing: .04em;
+}
+.log-row {
+  display: grid;
+  grid-template-columns: 64px 76px minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: 2px var(--space-4);
+  border-left: 2px solid transparent;
+  color: var(--text);
+}
+.log-row:hover { background: var(--surface-hover); }
+.log-time { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.log-badge {
+  color: var(--text-muted);
+  font-size: var(--text-label);
+  letter-spacing: .05em;
+}
+.log-text { overflow-wrap: anywhere; }
+.log-warn { border-left-color: var(--warn); }
+.log-warn .log-badge { color: var(--warn); }
+.log-error { border-left-color: var(--onair); background: rgba(209, 52, 56, 0.08); }
+.log-error .log-badge { color: #ff8a8d; }
+.log-text mark { background: rgba(224, 177, 62, 0.35); color: var(--text); border-radius: 2px; padding: 0 1px; }
+@media (max-width: 700px) {
+  .log-row { grid-template-columns: 56px minmax(0, 1fr); }
+  .log-badge { display: none; }
+}
+
+/* ---------- hangero-ertek szerkesztese ---------- */
+output[for] { cursor: text; }
+.value-edit {
+  width: 6ch;
+  min-width: 0;
+  padding: 2px var(--space-1);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control, 4px);
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  text-align: center;
+}
+.value-edit:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.strip > .value-edit { justify-self: center; align-self: start; margin: 0 0 var(--space-3); font-size: var(--text-title); font-weight: 600; }
