@@ -2,6 +2,7 @@ from .audit import log_event, log_expiring
 from .auth import Decision, check, parse_bearer
 from .enroll import EnrollListener, Enrollment
 from .presence import Presence
+from .telemetry import DeviceTelemetry, TelemetryInvalid, parse_buffer, parse_events
 from .store import (
     DeviceConflict,
     DeviceError,
@@ -14,6 +15,10 @@ from .store import (
 
 __all__ = [
     "Decision",
+    "DeviceTelemetry",
+    "TelemetryInvalid",
+    "parse_buffer",
+    "parse_events",
     "EnrollListener",
     "Enrollment",
     "Presence",
