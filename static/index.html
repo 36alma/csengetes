@@ -442,7 +442,7 @@
         <div class="table-wrap">
           <table class="table">
             <thead>
-              <tr><th>Név</th><th class="col-ip">IP-cím</th><th class="col-status">Állapot</th><th class="col-date">Token lejár</th><th class="col-date">Utolsó kapcsolat</th><th class="col-actions">Műveletek</th></tr>
+              <tr><th>Név</th><th class="col-ip">IP-cím</th><th class="col-status">Állapot</th><th class="col-buffer">Buffer</th><th class="col-date">Token lejár</th><th class="col-date">Utolsó kapcsolat</th><th class="col-actions">Műveletek</th></tr>
             </thead>
             <tbody id="devicesBody"></tbody>
           </table>
@@ -484,7 +484,13 @@
         </section>
 
         <section class="panel" aria-labelledby="deviceLogTitle">
-          <header class="panel-header"><h2 class="panel-title" id="deviceLogTitle">Eszköznapló</h2></header>
+          <header class="panel-header">
+            <h2 class="panel-title" id="deviceLogTitle">Eszköznapló</h2>
+            <div class="panel-actions">
+              <select class="select" id="deviceLogSourceSelect" aria-label="Napló forrása"></select>
+              <select class="select" id="deviceLogTypeSelect" aria-label="Eseménytípus" hidden></select>
+            </div>
+          </header>
           <pre class="log" id="deviceLogBox"></pre>
         </section>
       </div>
@@ -494,10 +500,27 @@
     <section class="page" id="panel-log">
       <div class="page-header">
         <h1 class="page-title">Napló</h1>
-        <span class="muted">Az utolsó 300 sor, automatikusan frissül</span>
+        <span class="muted" id="logSummary">Automatikusan frissül</span>
       </div>
       <section class="panel log-panel" aria-label="Rendszernapló">
-        <pre class="log" id="logBox"></pre>
+        <div class="log-toolbar">
+          <input class="input log-search" id="logSearch" type="search" placeholder="Keresés a naplóban…" aria-label="Keresés a naplóban" autocomplete="off">
+          <div class="log-levels" id="logLevels" role="group" aria-label="Szint szerinti szűrés">
+            <button class="btn btn-sm log-level is-active" data-level="all" aria-pressed="true">Mind</button>
+            <button class="btn btn-sm log-level" data-level="info" aria-pressed="false">Infó</button>
+            <button class="btn btn-sm log-level" data-level="warn" aria-pressed="false">Figyelmeztetés</button>
+            <button class="btn btn-sm log-level" data-level="error" aria-pressed="false">Hiba</button>
+          </div>
+          <select class="select log-range" id="logRange" aria-label="Időszak">
+            <option value="0">Teljes időszak</option>
+            <option value="1">Utolsó 1 óra</option>
+            <option value="24">Utolsó 24 óra</option>
+          </select>
+          <label class="log-toggle"><input type="checkbox" id="logHideNoise"> Háttérzaj elrejtése</label>
+          <button class="btn btn-sm" id="logClear" hidden>Szűrők törlése</button>
+          <button class="btn btn-sm" id="logCopy">Másolás</button>
+        </div>
+        <div class="log log-rows" id="logBox" role="log" aria-live="off"></div>
       </section>
     </section>
 
