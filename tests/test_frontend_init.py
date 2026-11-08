@@ -32,7 +32,7 @@ def test_app_js_syntax():
 def test_init_without_microphone_still_loads_everything(tmp_path):
     result = _run(tmp_path, {"/api/mixer/inputs": {"inputs": [], "current": None}})
     fetched = result["fetched"]
-    for path in ("/api/media", "/api/schedules", "/api/time", "/api/output/devices", "/api/logs?limit=300", "/api/devices"):
+    for path in ("/api/media", "/api/schedules", "/api/time", "/api/output/devices", "/api/logs?limit=1000", "/api/devices"):
         assert path in fetched, f"{path} nem toltodott be: {fetched}"
     assert result["unhandled"] == []
     assert result["inputOptions"] == [{"text": "Nincs mikrofon", "disabled": True}]
@@ -42,7 +42,7 @@ def test_init_survives_failing_loader(tmp_path):
     # null valaszok (pl. halozati hiba) mellett is vegigfut az inditas
     result = _run(tmp_path, {"/api/mixer/inputs": {"inputs": [{"index": 1, "name": "m"}], "current": None},
                              "/api/music": None})
-    assert "/api/logs?limit=300" in result["fetched"]
+    assert "/api/logs?limit=1000" in result["fetched"]
     assert result["unhandled"] == []
 
 
@@ -51,3 +51,14 @@ def test_init_loads_devices_and_survives_odd_responses(tmp_path):
     assert "/api/devices" in result["fetched"]
     assert "/api/logs?limit=1000" in result["fetched"]
     assert result["unhandled"] == []
+
+
+def test_init_renders_devices_with_buffer_and_esp_log(tmp_path):
+    device = {"id": "d_1", "name": "Aula", "ip_address": "10.0.0.5", "status": "connected", "enabled": True,
+              "token_expires_at": 9_999_999_999, "last_seen": 1,
+              "buffer": {"fill_ms": 420, "capacity_ms": 1000, "underruns": 2, "drops": 0, "received_at": 1}}
+    result = _run(tmp_path, {"/api/devices": {"devices": [device]},
+                             "/api/devices/d_1/log?limit=500": {"events": [{"type": "drop", "ts": 1, "source": "esp"}]}})
+    assert result["unhandled"] == []
+    broken = _run(tmp_path, {"/api/devices": {"devices": [dict(device, buffer={"fill_ms": "x"})]}})
+    assert broken["unhandled"] == []
