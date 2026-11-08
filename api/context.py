@@ -12,7 +12,7 @@ import scheduler as scheduler_mod
 import time_source
 
 if TYPE_CHECKING:
-    from services.devices import DeviceStore, Enrollment, Presence
+    from services.devices import DeviceStore, DeviceTelemetry, Enrollment, Presence
     from services.mixer import Mixer, MixerPlayer
     from services.music import MusicSession
 
@@ -36,6 +36,7 @@ class ApiContext:
     devices: "DeviceStore"
     presence: "Presence"
     enrollment: "Enrollment | None" = None
+    telemetry: "DeviceTelemetry | None" = None
     music_session: "MusicSession" = field(default_factory=_new_music_session)  # zene es mixer kozos allapota
 
 
