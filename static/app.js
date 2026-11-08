@@ -225,6 +225,70 @@ document.addEventListener("input", (e) => {
   if (cl && (cl.contains("slider") || cl.contains("fader"))) setSliderFill(e.target);
 });
 
+// ---------- csuszka kezeles: dupla katt, gorgo, ertek beirasa ----------
+
+const SLIDER_DEFAULT = 100;
+
+function setSliderValue(slider, raw) {
+  const min = Number(slider.min) || 0;
+  const max = Number(slider.max) || 100;
+  const value = Math.min(max, Math.max(min, Math.round(Number(raw))));
+  if (Number.isNaN(value)) return;
+  slider.value = value;
+  setSliderFill(slider);
+  slider.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function isVolumeSlider(el) {
+  return el && el.classList && (el.classList.contains("slider") || el.classList.contains("fader"));
+}
+
+// dupla katt: vissza az alapertekre (100%)
+document.addEventListener("dblclick", (e) => {
+  if (isVolumeSlider(e.target)) setSliderValue(e.target, SLIDER_DEFAULT);
+});
+
+// gorgo: csak akkor allit, ha az egér a csuszka folott van
+document.addEventListener("wheel", (e) => {
+  if (!isVolumeSlider(e.target) || !e.deltaY) return;
+  e.preventDefault();
+  const step = e.shiftKey ? 5 : 1;
+  setSliderValue(e.target, Number(e.target.value) + (e.deltaY < 0 ? step : -step));
+}, { passive: false });
+
+// az ertekre kattintva be lehet irni a szamot a min..max tartomanyban
+document.addEventListener("click", (e) => {
+  const out = e.target.closest && e.target.closest("output[for]");
+  if (!out || out.hidden) return;
+  const slider = document.getElementById(out.getAttribute("for"));
+  if (!isVolumeSlider(slider)) return;
+  const input = document.createElement("input");
+  input.type = "number";
+  input.className = "value-edit num";
+  input.min = slider.min;
+  input.max = slider.max;
+  input.step = 1;
+  input.value = slider.value;
+  input.setAttribute("aria-label", `Érték (${slider.min}–${slider.max})`);
+  let done = false;
+  const finish = (commit) => {
+    if (done) return;
+    done = true;
+    if (commit && input.value !== "") setSliderValue(slider, input.value);
+    out.hidden = false;
+    input.remove();
+  };
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") finish(true);
+    else if (ev.key === "Escape") finish(false);
+  });
+  input.addEventListener("blur", () => finish(true));
+  out.hidden = true;
+  out.after(input);
+  input.focus();
+  input.select();
+});
+
 // ---------- alert popup ----------
 
 let alertTimer = null;
@@ -782,12 +846,159 @@ function fillLog(box, lines, emptyText) {
   if (wasAtBottom) box.scrollTop = box.scrollHeight;
 }
 
+const LOG_LINE_RE = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(?:[.,]\d+)? \[([A-Za-z]+)\] ?(.*)$/;
+const LOG_LEVELS = { info: "info", debug: "info", warning: "warn", warn: "warn", error: "error", critical: "error" };
+const LOG_LEVEL_TEXT = { info: "INFO", warn: "FIGYELEM", error: "HIBA" };
+const LOG_NOISE_RE = /NTP szinkron sikeres/i;
+
+const logView = { lines: [], level: "all", query: "", range: 0, hideNoise: false };
+
+function parseLogLine(raw) {
+  const m = LOG_LINE_RE.exec(raw);
+  if (!m) return { raw, date: "", time: "", level: "info", text: raw, stamp: null };
+  const level = LOG_LEVELS[m[3].toLowerCase()] || "info";
+  const stamp = new Date(`${m[1]}T${m[2]}`).getTime();
+  return { raw, date: m[1], time: m[2], level, text: m[4], stamp: Number.isNaN(stamp) ? null : stamp };
+}
+
+function filterLogEntries(entries, view) {
+  const query = view.query.trim().toLowerCase();
+  const terms = query ? query.split(/\s+/) : [];
+  const newest = entries.reduce((max, e) => (e.stamp && e.stamp > max ? e.stamp : max), 0);
+  const since = view.range && newest ? newest - view.range * 3600 * 1000 : 0;
+  return entries.filter((e) => {
+    if (view.level !== "all" && e.level !== view.level) return false;
+    if (since && e.stamp !== null && e.stamp < since) return false;
+    if (view.hideNoise && LOG_NOISE_RE.test(e.text)) return false;
+    if (terms.length) {
+      const hay = e.raw.toLowerCase();
+      if (!terms.every((t) => hay.includes(t))) return false;
+    }
+    return true;
+  });
+}
+
+function appendHighlighted(node, text, terms) {
+  if (!terms.length) { node.textContent = text; return; }
+  const escaped = terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const re = new RegExp(`(${escaped.join("|")})`, "gi");
+  text.split(re).forEach((part, i) => {
+    if (i % 2 === 1) {
+      const mark = document.createElement("mark");
+      mark.textContent = part;
+      node.appendChild(mark);
+    } else if (part) {
+      node.appendChild(document.createTextNode(part));
+    }
+  });
+}
+
+function renderLogView() {
+  const box = document.getElementById("logBox");
+  const wasAtBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
+  const entries = logView.lines.map(parseLogLine);
+  const shown = filterLogEntries(entries, logView);
+  const terms = logView.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const frag = document.createDocumentFragment();
+  let lastDate = "";
+  for (const e of shown) {
+    if (e.date && e.date !== lastDate) {
+      lastDate = e.date;
+      const sep = document.createElement("div");
+      sep.className = "log-day";
+      sep.textContent = e.date;
+      frag.appendChild(sep);
+    }
+    const row = document.createElement("div");
+    row.className = `log-row log-${e.level}`;
+    const time = document.createElement("span");
+    time.className = "log-time";
+    time.textContent = e.time;
+    const badge = document.createElement("span");
+    badge.className = "log-badge";
+    badge.textContent = LOG_LEVEL_TEXT[e.level];
+    const text = document.createElement("span");
+    text.className = "log-text";
+    appendHighlighted(text, e.text, terms);
+    row.append(time, badge, text);
+    frag.appendChild(row);
+  }
+  if (!shown.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = entries.length ? "Nincs a szűrésnek megfelelő sor." : "A napló üres.";
+    frag.appendChild(empty);
+  }
+  box.replaceChildren(frag);
+  if (wasAtBottom) box.scrollTop = box.scrollHeight;
+
+  const filtered = logView.level !== "all" || terms.length > 0 || logView.range > 0 || logView.hideNoise;
+  document.getElementById("logClear").hidden = !filtered;
+  document.getElementById("logSummary").textContent = filtered
+    ? `${shown.length} / ${entries.length} sor – automatikusan frissül`
+    : `Az utolsó ${entries.length} sor – automatikusan frissül`;
+  return shown;
+}
+
 async function loadLogs() {
-  const data = await get("/api/logs?limit=300");
+  const data = await get("/api/logs?limit=1000");
   const lines = data.lines || [];
-  fillLog(document.getElementById("logBox"), lines, "A napló üres.");
+  logView.lines = lines;
+  renderLogView();
   fillLog(document.getElementById("mixerLogBox"), lines.slice(-60), "Még nincs esemény.");
 }
+
+function resetLogFilters() {
+  logView.level = "all";
+  logView.query = "";
+  logView.range = 0;
+  logView.hideNoise = false;
+  document.getElementById("logSearch").value = "";
+  document.getElementById("logRange").value = "0";
+  document.getElementById("logHideNoise").checked = false;
+  syncLogLevelButtons();
+  renderLogView();
+}
+
+function syncLogLevelButtons() {
+  document.querySelectorAll("#logLevels .log-level").forEach((b) => {
+    const active = b.dataset.level === logView.level;
+    b.classList.toggle("is-active", active);
+    b.setAttribute("aria-pressed", String(active));
+  });
+}
+
+document.getElementById("logSearch").addEventListener("input", (e) => {
+  logView.query = e.target.value;
+  renderLogView();
+});
+document.getElementById("logLevels").addEventListener("click", (e) => {
+  const btn = e.target.closest(".log-level");
+  if (!btn) return;
+  logView.level = btn.dataset.level;
+  syncLogLevelButtons();
+  renderLogView();
+});
+document.getElementById("logRange").addEventListener("change", (e) => {
+  logView.range = Number(e.target.value);
+  renderLogView();
+});
+document.getElementById("logHideNoise").addEventListener("change", (e) => {
+  logView.hideNoise = e.target.checked;
+  renderLogView();
+});
+document.getElementById("logClear").addEventListener("click", resetLogFilters);
+document.getElementById("logCopy").addEventListener("click", async (e) => {
+  const entries = filterLogEntries(logView.lines.map(parseLogLine), logView);
+  const btn = e.currentTarget;
+  try {
+    await navigator.clipboard.writeText(entries.map((x) => x.raw).join("\n"));
+    btn.textContent = "Másolva";
+  } catch {
+    btn.textContent = "Nem sikerült";
+  }
+  setTimeout(() => { btn.textContent = "Másolás"; }, 1500);
+});
 
 setInterval(loadLogs, 2000);
 
@@ -925,25 +1136,31 @@ async function deleteDevice(device) {
 function renderDevices(devices) {
   const body = document.getElementById("devicesBody");
   body.innerHTML = "";
-  if (!devices.length) emptyRow(body, 6, "Még nincs felvett eszköz. Add hozzá lent, vagy hagyd jóvá egy jelentkező eszközt.");
+  if (!devices.length) emptyRow(body, 7, "Még nincs felvett eszköz. Add hozzá lent, vagy hagyd jóvá egy jelentkező eszközt.");
   devices.forEach((device, index) => {
     const tr = document.createElement("tr");
-    const cell = (text) => {
+    const cell = (text, label) => {
       const td = document.createElement("td");
       td.textContent = text;
+      if (label) td.dataset.label = label;
       tr.appendChild(td);
       return td;
     };
-    cell(device.name);
-    cell(device.ip_address).className = "num";
-    cell("").appendChild(statusBadge(DEVICE_STATUS_TEXT[device.status] || device.status, DEVICE_STATUS_TONE[device.status]));
+    cell(device.name).className = "cell-name";
+    cell(device.ip_address, "IP-cím").className = "num";
+    cell("", "Állapot").appendChild(statusBadge(DEVICE_STATUS_TEXT[device.status] || device.status, DEVICE_STATUS_TONE[device.status]));
+    const buffer = bufferCell(device.buffer);
+    buffer.dataset.label = "Buffer";
+    tr.appendChild(buffer);
     const soon = device.expiring_soon && device.status !== "expired";
-    const expires = cell(formatDeviceTime(device.token_expires_at) + (soon ? " (hamarosan lejár)" : ""));
+    const expires = cell(formatDeviceTime(device.token_expires_at) + (soon ? " (hamarosan lejár)" : ""), "Token lejár");
     expires.className = device.expiring_soon ? "num expiring-soon" : "num";
-    cell(formatDeviceTime(device.last_seen)).className = "num";
+    cell(formatDeviceTime(device.last_seen), "Utolsó kapcsolat").className = "num";
     const td = document.createElement("td");
+    td.className = "cell-actions";
     const actions = document.createElement("div");
     actions.className = "actions";
+    actions.appendChild(deviceActionButton("Napló", "btn-sm", () => showDeviceLog(device)));
     actions.appendChild(deviceActionButton("Szerkesztés", "btn-sm", () => startEditDevice(device)));
     actions.appendChild(deviceActionButton(device.enabled ? "Letiltás" : "Engedélyezés", "btn-sm", () => toggleDevice(device)));
     actions.appendChild(deviceActionButton("Új token", "btn-sm", () => rotateDevice(device)));
@@ -952,6 +1169,113 @@ function renderDevices(devices) {
     tr.appendChild(td);
     body.appendChild(tr);
   });
+  fillLogSources(devices);
+}
+
+// Az ESP utolso buffer-jelentese: toltottseg-sav + szam; ha regi a jelentes, halvany
+const BUFFER_STALE_SECONDS = 30;
+
+function bufferCell(buffer) {
+  const td = document.createElement("td");
+  if (!buffer || typeof buffer.fill_ms !== "number") {
+    td.textContent = "–";
+    return td;
+  }
+  const capacity = typeof buffer.capacity_ms === "number" && buffer.capacity_ms > 0 ? buffer.capacity_ms : null;
+  const wrap = document.createElement("div");
+  const age = Date.now() / 1000 - (buffer.received_at || 0);
+  wrap.className = "buffer-state" + (age > BUFFER_STALE_SECONDS ? " stale" : "");
+  wrap.title = "Utolsó jelentés: " + formatDeviceTime(buffer.received_at);
+  if (capacity) {
+    const bar = document.createElement("span");
+    bar.className = "buffer-bar";
+    const fill = document.createElement("span");
+    const ratio = Math.max(0, Math.min(1, buffer.fill_ms / capacity));
+    fill.className = "buffer-fill" + (ratio < 0.2 ? " low" : "");
+    fill.style.width = Math.round(ratio * 100) + "%";
+    bar.appendChild(fill);
+    wrap.appendChild(bar);
+  }
+  const text = document.createElement("span");
+  text.className = "num";
+  text.textContent = capacity ? `${buffer.fill_ms}/${capacity} ms` : `${buffer.fill_ms} ms`;
+  wrap.appendChild(text);
+  const problems = [];
+  if (buffer.underruns > 0) problems.push(`${buffer.underruns} underrun`);
+  if (buffer.drops > 0) problems.push(`${buffer.drops} drop`);
+  if (problems.length) {
+    const warn = document.createElement("span");
+    warn.className = "buffer-warn";
+    warn.textContent = problems.join(", ");
+    wrap.appendChild(warn);
+  }
+  td.appendChild(wrap);
+  return td;
+}
+
+// Az eszkoznaplo forrasa: "" = a kozos szerver-naplo [device:] sorai, kulonben egy eszkoz sajat naploja
+let logSourceKey = null;
+let logTypeKey = null;
+
+function fillLogSources(devices) {
+  const select = document.getElementById("deviceLogSourceSelect");
+  const key = devices.map((d) => d.id + ":" + d.name).join("|");
+  if (key === logSourceKey) return; // ne zarja be a nyitott listat minden frissitesnel
+  logSourceKey = key;
+  const previous = select.value;
+  select.innerHTML = "";
+  const all = document.createElement("option");
+  all.value = "";
+  all.textContent = "Szerver napló (összes eszköz)";
+  select.appendChild(all);
+  devices.forEach((d) => {
+    const option = document.createElement("option");
+    option.value = d.id;
+    option.textContent = d.name + " – ESP napló";
+    select.appendChild(option);
+  });
+  select.value = devices.some((d) => d.id === previous) ? previous : "";
+}
+
+function showDeviceLog(device) {
+  document.getElementById("deviceLogSourceSelect").value = device.id;
+  document.getElementById("deviceLogTypeSelect").value = "";
+  loadDeviceLog();
+}
+
+const LOG_PLAIN_KEYS = new Set(["type", "msg", "ts", "source"]);
+
+function formatEspEvent(event) {
+  const extra = Object.keys(event)
+    .filter((k) => !LOG_PLAIN_KEYS.has(k))
+    .map((k) => `${k}=${event[k]}`)
+    .join(" ");
+  const parts = [formatDeviceTime(event.ts), `[${event.source === "server" ? "szerver" : "esp"}]`, event.type];
+  if (event.msg) parts.push("– " + event.msg);
+  if (extra) parts.push(extra);
+  return parts.join(" ");
+}
+
+function fillLogTypes(events) {
+  const select = document.getElementById("deviceLogTypeSelect");
+  const types = [...new Set(events.map((e) => e.type))].sort();
+  const key = types.join("|");
+  select.hidden = false;
+  if (key === logTypeKey) return;
+  logTypeKey = key;
+  const previous = select.value;
+  select.innerHTML = "";
+  const all = document.createElement("option");
+  all.value = "";
+  all.textContent = "Minden típus";
+  select.appendChild(all);
+  types.forEach((type) => {
+    const option = document.createElement("option");
+    option.value = type;
+    option.textContent = type;
+    select.appendChild(option);
+  });
+  select.value = types.includes(previous) ? previous : "";
 }
 
 const PENDING_CONFLICT_TEXT = {
@@ -1015,6 +1339,17 @@ async function loadDevices() {
 }
 
 async function loadDeviceLog() {
+  const deviceId = document.getElementById("deviceLogSourceSelect").value;
+  if (deviceId) {
+    const data = await get(`/api/devices/${encodeURIComponent(deviceId)}/log?limit=500`);
+    const events = (data && data.events) || [];
+    fillLogTypes(events);
+    const type = document.getElementById("deviceLogTypeSelect").value;
+    const shown = type ? events.filter((e) => e.type === type) : events;
+    fillLog(document.getElementById("deviceLogBox"), shown.slice(-200).map(formatEspEvent), "Még nincs esemény ettől az eszköztől.");
+    return;
+  }
+  document.getElementById("deviceLogTypeSelect").hidden = true;
   const data = await get("/api/logs?limit=1000");
   const lines = ((data && data.lines) || []).filter((line) => line.includes("[device:"));
   fillLog(document.getElementById("deviceLogBox"), lines.slice(-200), "Még nincs eszközesemény a naplóban.");
@@ -1034,6 +1369,13 @@ document.getElementById("btnDeviceSave").addEventListener("click", async () => {
 });
 
 document.getElementById("btnDeviceCancel").addEventListener("click", resetDeviceForm);
+
+document.getElementById("deviceLogSourceSelect").addEventListener("change", () => {
+  document.getElementById("deviceLogTypeSelect").value = "";
+  logTypeKey = null;
+  loadDeviceLog();
+});
+document.getElementById("deviceLogTypeSelect").addEventListener("change", loadDeviceLog);
 
 document.querySelector('.nav-item[data-tab="devices"]').addEventListener("click", () => {
   loadDevices();
