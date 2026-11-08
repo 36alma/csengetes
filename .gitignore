@@ -109,3 +109,4 @@ download/*
 devices.json
 
 local/
+logs/
