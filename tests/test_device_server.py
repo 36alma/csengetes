@@ -105,13 +105,14 @@ def test_unknown_token_is_logged_with_question_mark(env, caplog):
     assert "hibas" not in text
 
 
-def test_only_stream_route_exists(env):
+def test_only_device_routes_exist(env):
     client = env.client_for("192.168.1.50")
     for path in ("/", "/api/devices", "/api/mixer", "/api/logs", "/api/mixer/volume", "/app.js"):
         assert client.get(path, headers=_auth(env.token)).status_code == 404
     assert client.post("/api/mixer/mic", json={"live": True}, headers=_auth(env.token)).status_code == 404
     paths = {getattr(r, "path", None) for r in env.app.routes}
-    assert paths == {"/api/mixer/stream"}
+    # csak az eszkoz-utak: hang-stream es az ESP telemetria (buffer, naplo); admin-utvonal nincs
+    assert paths == {"/api/mixer/stream", "/api/device/buffer", "/api/device/log"}
 
 
 @pytest.mark.parametrize("action", ["rotate", "disable", "delete", "expire"])
