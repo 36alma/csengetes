@@ -11,3 +11,4 @@ sounddevice
 soundfile>=0.12.1
 numpy
 lameenc
+websockets>=15

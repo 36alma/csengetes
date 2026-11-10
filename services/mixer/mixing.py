@@ -10,13 +10,19 @@ def mix_blocks(
     music_volume: float,
     mic_volume: float,
     master_volume: float,
+    extras: list[tuple[np.ndarray, float]] | None = None,
 ) -> np.ndarray:
-    """Ket float32 blokk osszekeverese int16 PCM-be. Ha egy forras nincs, csend."""
+    """Ket float32 blokk osszekeverese int16 PCM-be. Ha egy forras nincs, csend.
+
+    Az extras további (blokk, hangerő) párok, például a hálózati mikrofonok.
+    """
     mixed = np.zeros(BLOCK_SIZE, dtype=np.float32)
     if music is not None:
         mixed += music * music_volume
     if mic is not None:
         mixed += mic * mic_volume
+    for block, volume in extras or ():
+        mixed += block * volume
     mixed *= master_volume
     np.clip(mixed, -1.0, 1.0, out=mixed)
     return (mixed * 32767).astype(np.int16)

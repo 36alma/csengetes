@@ -32,6 +32,8 @@ from device_server import DeviceServer
 from services.devices import DeviceStore, DeviceTelemetry, EnrollListener, Enrollment, Presence, log_expiring
 from services.mixer import Mixer, MixerPlayer, PlayGate
 from services.mixer.output import open_output_stream
+from services.remote_mic.manager import RemoteMicManager
+from services.remote_mic.store import RemoteMicStore
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MEDIA_DIR = os.path.join(BASE_DIR, "media")
@@ -64,6 +66,8 @@ telemetry = DeviceTelemetry()
 device_server = DeviceServer(mixer, devices, presence, DEVICE_HOST, config.DEVICE_PORT, telemetry)
 enrollment = Enrollment(devices, config.ENROLL_KEY, config.ENROLL_CIDR)
 enroll_listener = EnrollListener(enrollment, DEVICE_HOST, config.ENROLL_PORT)
+remote_mic_store = RemoteMicStore()
+remote_mics = RemoteMicManager(remote_mic_store, mixer)
 _stop_expiry = threading.Event()
 
 
@@ -147,6 +151,7 @@ register_api(
         presence=presence,
         enrollment=enrollment,
         telemetry=telemetry,
+        remote_mics=remote_mics,
     ),
 )
 
@@ -166,6 +171,7 @@ def main():
     if mixer.bell_volume == 0.0:
         logger.warning("A csengo hangereje 0 szazalek: az utemezett csengetes nem lesz hallhato.")
     devices.replay_load_warnings()  # a devices.json betoltese a naplo beallitasa elott tortent
+    remote_mic_store.replay_load_warnings()
     os.makedirs(MEDIA_DIR, exist_ok=True)
     mixer.start()
     scheduler.start()
@@ -201,6 +207,7 @@ def main():
     enroll_listener.stop()
     device_server.stop()
     scheduler.stop()
+    remote_mics.shutdown()
     mixer.stop()
 
 

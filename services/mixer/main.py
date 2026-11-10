@@ -101,6 +101,9 @@ class Mixer():
         # forrasonkenti csucsertek 0..1 a sajat hangero utan, a master elott (a csatornameroknek);
         # blokkonkent uj dict, igy az olvaso mindig egy egyseges allapotot lat
         self.levels: dict[str, float] = dict.fromkeys(SOURCES, 0.0)
+        # hálózati mikrofonok: az objektumoknak .id, .volume és nem blokkoló .read_block() kell
+        self.remote_channels: tuple = ()
+        self.remote_levels: dict[str, float] = {}  # csatornánkénti csúcsérték, mint a levels
         self._file: np.ndarray | None = None
         self._file_pos = 0
         self._playback: Playback | None = None
@@ -307,6 +310,7 @@ class Mixer():
             self.status = MixerStatus.IDLE
             self.level = 0.0
             self.levels = dict.fromkeys(SOURCES, 0.0)
+            self.remote_levels = {}
 
     def _next_file_block(self) -> tuple[np.ndarray | None, MixerStatus]:
         with self._file_lock:
@@ -335,6 +339,18 @@ class Mixer():
         }
         previous = self.levels
         self.levels = {key: max(current[key], previous[key] * LEVEL_DECAY) for key in SOURCES}
+
+    def _read_remote(self) -> list[tuple[str, np.ndarray | None, float]]:
+        """Blokkonként egyszer olvassa a csatornákat, a hangerőt is ekkor rögzíti."""
+        return [(channel.id, channel.read_block(), channel.volume) for channel in self.remote_channels]
+
+    def _update_remote_levels(self, remote) -> None:
+        previous = self.remote_levels
+        levels = {}
+        for channel_id, block, volume in remote:
+            current = 0.0 if block is None else min(1.0, float(np.abs(block).max()) * volume)
+            levels[channel_id] = max(current, previous.get(channel_id, 0.0) * LEVEL_DECAY)
+        self.remote_levels = levels
 
     def _run(self):
         encoder = lameenc.Encoder()
@@ -368,18 +384,22 @@ class Mixer():
 
                     music, file_flag = self._next_file_block()
                     mic = self.mic.read_block() if self._mic_live else None
+                    remote = self._read_remote()
+                    extras = [(block, volume) for _, block, volume in remote if block is not None]
 
                     status = file_flag
-                    if mic is not None and self.mic_volume > 0.0:
+                    # a hálózati mikrofon is mikrofon: az ESP-k státuszbájtja nem kap új jelentést
+                    if (mic is not None and self.mic_volume > 0.0) or any(volume > 0.0 for _, volume in extras):
                         status |= MixerStatus.PLAYING_MIC
                     self.status = status
 
                     # a csengonek es a zenenek kulon hangereje van
                     file_volume = self.music_volume if file_flag == MixerStatus.PLAYING_MUSIC else self.bell_volume
                     mic_volume = self.mic_volume
-                    pcm = mix_blocks(music, mic, file_volume, mic_volume, self.master_volume)
+                    pcm = mix_blocks(music, mic, file_volume, mic_volume, self.master_volume, extras)
                     self.level = max(int(np.abs(pcm.astype(np.int32)).max()) / 32767, self.level * LEVEL_DECAY)
                     self._update_levels(music, file_flag, file_volume, mic, mic_volume)
+                    self._update_remote_levels(remote)
 
                     paced_by_output = False
                     if sink is not None:

@@ -50,6 +50,10 @@ def test_state_idle(env):
     assert data["stream"]["codec"] == "mp3"
 
 
+def test_state_without_remote_mic_manager_has_no_strips(env):
+    assert env.client.get("/api/mixer").json()["remote_mics"] == []
+
+
 def test_state_without_microphone_device(env):
     env.mixer.mic.current_output_device = None
     assert env.client.get("/api/mixer").json()["input"] is None

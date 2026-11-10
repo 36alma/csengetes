@@ -107,6 +107,8 @@ config.json
 download/*
 *.bat
 devices.json
+remote_mics.json*
+micserver/state.json*
 
 local/
 logs/

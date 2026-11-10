@@ -57,7 +57,28 @@ function makeSelect() {
   });
 }
 
-const elements = {};
+// A csatornasavok tarolója: a beszúrások és az eltávolítások valóban követhetők
+function makeContainer() {
+  const base = universal();
+  const children = [];
+  let inserts = 0;
+  return new Proxy(base, {
+    get(t, prop) {
+      if (prop === "children") return children;
+      if (prop === "inserts") return inserts;
+      if (prop === "insertBefore") return (el) => { children.push(el); inserts += 1; return el; };
+      if (prop === "removeChild") return (el) => { children.splice(children.indexOf(el), 1); return el; };
+      return t[prop];
+    },
+    set(t, prop, value) {
+      t[prop] = value;
+      return true;
+    },
+  });
+}
+
+const elements = { mixerStrips: makeContainer() };
+const loaderErrors = [];
 const document = {
   getElementById(id) {
     if (!elements[id]) elements[id] = id.endsWith("Select") ? makeSelect() : universal();
@@ -65,7 +86,7 @@ const document = {
   },
   querySelector: () => universal(),
   querySelectorAll: () => [],
-  createElement: () => ({}),
+  createElement: () => universal(),
   addEventListener: () => {},
   activeElement: null,
 };
@@ -80,7 +101,7 @@ async function fetch(path) {
 const sandbox = {
   document,
   fetch,
-  console: { log() {}, warn() {}, error() {} },
+  console: { log() {}, warn() {}, error(...args) { loaderErrors.push(args.map(String).join(" ")); } },
   window: { location: { search: "", pathname: "/" }, history: { replaceState() {} } },
   URLSearchParams,
   // az idozitett lekerdezesek ne fussanak vegtelen ciklusban
@@ -94,13 +115,35 @@ const sandbox = {
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(appPath, "utf8"), sandbox, { filename: "app.js" });
 
-setImmediate(function report() {
-  // nehany esemenykor a promise-lancoknak
+// nehany esemenykor a promise-lancoknak
+function settle(done) {
   let rounds = 0;
   (function wait() {
     if (rounds++ < 20) return setImmediate(wait);
-    const select = elements["mixerInputSelect"];
-    const options = select ? Array.from(select.children).map((o) => ({ text: o.textContent, disabled: !!o.disabled })) : [];
-    process.stdout.write(JSON.stringify({ fetched, unhandled, inputOptions: options }));
+    done();
   })();
-});
+}
+
+function report() {
+  const select = elements["mixerInputSelect"];
+  const options = select ? Array.from(select.children).map((o) => ({ text: o.textContent, disabled: !!o.disabled })) : [];
+  const strips = elements.mixerStrips;
+  process.stdout.write(JSON.stringify({
+    fetched,
+    unhandled,
+    loaderErrors,
+    inputOptions: options,
+    connection: elements.sbConnection ? elements.sbConnection.textContent : null,
+    onAirHidden: elements.onAirBadge ? elements.onAirBadge.hidden : null,
+    strips: strips.children.map((el) => el.dataset.remoteId),
+    stripInserts: strips.inserts,
+  }));
+}
+
+setImmediate(() => settle(() => {
+  // masodik lekerdezes mas valaszokkal: a savok ujraepitesenek ellenorzesehez
+  if (!responses.__second__) return report();
+  Object.assign(responses, responses.__second__);
+  vm.runInContext("pollMixer()", sandbox);
+  settle(report);
+}));

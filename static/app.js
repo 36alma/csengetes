@@ -1068,8 +1068,11 @@ function startEditDevice(device) {
   document.getElementById("deviceEditHint").textContent = device.name;
 }
 
-function showToken(deviceName, token) {
+function showToken(deviceName, token, hint) {
   document.getElementById("tokenDeviceName").textContent = "Új token: " + deviceName;
+  const hintEl = document.getElementById("tokenHint");
+  hintEl.textContent = hint || "";
+  hintEl.hidden = !hint;
   document.getElementById("tokenValue").value = token;
   document.getElementById("tokenOverlay").classList.add("visible");
   document.getElementById("tokenValue").select();
@@ -1377,15 +1380,155 @@ document.getElementById("deviceLogSourceSelect").addEventListener("change", () =
 });
 document.getElementById("deviceLogTypeSelect").addEventListener("change", loadDeviceLog);
 
+// ---------- Mikrofongépek (Eszközök fül) ----------
+
+const REMOTE_MIC_STATE = {
+  off: ["off", "Ki"],
+  connecting: ["off", "Kapcsolódás…"],
+  on_air: ["ok", "Adásban"],
+  no_audio: ["warn", "Nincs hang"],
+  unreachable: ["warn", "Nem elérhető"],
+  auth_failed: ["warn", "Hibás token"],
+  mic_error: ["warn", "Mikrofonhiba"],
+  protocol_error: ["warn", "Eltérő verzió"],
+};
+const REMOTE_MIC_CONNECTED = ["on_air", "no_audio"];
+const REMOTE_TOKEN_HINT = "A mikrofongépen futtasd: python -m micserver --set-token";
+
+let editingRemoteMicId = null;
+
+function remoteMicFields() {
+  const fields = {
+    name: document.getElementById("remoteMicName").value.trim(),
+    host: document.getElementById("remoteMicHost").value.trim(),
+  };
+  const port = document.getElementById("remoteMicPort").value.trim();
+  if (port) fields.port = Number(port);
+  return fields;
+}
+
+function resetRemoteMicForm() {
+  editingRemoteMicId = null;
+  for (const id of ["remoteMicName", "remoteMicHost", "remoteMicPort"]) {
+    document.getElementById(id).value = "";
+  }
+  document.getElementById("btnRemoteMicSave").textContent = "Hozzáadás";
+  document.getElementById("btnRemoteMicCancel").style.display = "none";
+  document.getElementById("remoteMicEditHint").textContent = "";
+}
+
+function startEditRemoteMic(source) {
+  editingRemoteMicId = source.id;
+  document.getElementById("remoteMicName").value = source.name;
+  document.getElementById("remoteMicHost").value = source.host;
+  document.getElementById("remoteMicPort").value = source.port;
+  document.getElementById("btnRemoteMicSave").textContent = "Mentés";
+  document.getElementById("btnRemoteMicCancel").style.display = "";
+  document.getElementById("remoteMicEditHint").textContent = "Szerkesztés: " + source.name;
+}
+
+async function refreshRemoteMics() {
+  await loadRemoteMics();
+  await pollMixer();
+}
+
+async function rotateRemoteMic(source) {
+  const result = await post(`/api/remote-mics/${source.id}/rotate`);
+  if (!result || result.error) return showError((result && result.error) || "Ismeretlen hiba");
+  showAlert("Token lecserélve", source.name, true);
+  await refreshRemoteMics();
+}
+
+async function reissueRemoteMic(source) {
+  const ok = await modal.confirm(
+    `Új tokent kap: ${source.name}. A futó kapcsolat megszakad, és a gépen is be kell állítani az új tokent.`,
+    { title: "Új token kiadása", okText: "Új token", danger: true }
+  );
+  if (!ok) return;
+  const result = await post(`/api/remote-mics/${source.id}/reissue`);
+  if (!result || result.error) return showError((result && result.error) || "Ismeretlen hiba");
+  showToken(source.name, result.token, REMOTE_TOKEN_HINT);
+  await refreshRemoteMics();
+}
+
+async function deleteRemoteMic(source) {
+  const ok = await modal.confirm(`Törlöd a mikrofongépet: ${source.name}? A futó kapcsolata megszakad.`, {
+    title: "Mikrofongép törlése",
+    okText: "Törlés",
+    danger: true,
+  });
+  if (!ok) return;
+  const result = await api(`/api/remote-mics/${source.id}`, { method: "DELETE" });
+  if (!result || result.error) return showError((result && result.error) || "Ismeretlen hiba");
+  if (editingRemoteMicId === source.id) resetRemoteMicForm();
+  await refreshRemoteMics();
+}
+
+function renderRemoteMics(sources) {
+  const body = document.getElementById("remoteMicsBody");
+  body.innerHTML = "";
+  if (!sources.length) emptyRow(body, 6, "Még nincs felvett mikrofongép. Add hozzá lent a gép címével.");
+  for (const source of sources) {
+    const tr = document.createElement("tr");
+    const cell = (text, label) => {
+      const td = document.createElement("td");
+      td.textContent = text;
+      if (label) td.dataset.label = label;
+      tr.appendChild(td);
+      return td;
+    };
+    const [tone, text] = REMOTE_MIC_STATE[source.state] || ["off", source.state];
+    cell(source.name).className = "cell-name";
+    cell(`${source.host}:${source.port}`, "Cím").className = "num";
+    cell("", "Állapot").appendChild(statusBadge(text, tone));
+    cell(formatDeviceTime(source.rotated_at), "Utolsó tokencsere").className = "num";
+    cell(formatDeviceTime(source.last_seen), "Utolsó kapcsolat").className = "num";
+    const td = document.createElement("td");
+    td.className = "cell-actions";
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    actions.appendChild(deviceActionButton("Szerkesztés", "btn-sm", () => startEditRemoteMic(source)));
+    const rotate = deviceActionButton("Token forgatása", "btn-sm", () => rotateRemoteMic(source));
+    rotate.disabled = !REMOTE_MIC_CONNECTED.includes(source.state);
+    actions.appendChild(rotate);
+    actions.appendChild(deviceActionButton("Új token", "btn-sm", () => reissueRemoteMic(source)));
+    actions.appendChild(deviceActionButton("Törlés", "btn-sm btn-danger", () => deleteRemoteMic(source)));
+    td.appendChild(actions);
+    tr.appendChild(td);
+    body.appendChild(tr);
+  }
+}
+
+async function loadRemoteMics() {
+  const data = await get("/api/remote-mics");
+  renderRemoteMics((data && data.sources) || []);
+}
+
+document.getElementById("btnRemoteMicSave").addEventListener("click", async () => {
+  const fields = remoteMicFields();
+  const result = editingRemoteMicId
+    ? await api(`/api/remote-mics/${editingRemoteMicId}`, { method: "PATCH", body: JSON.stringify(fields) })
+    : await post("/api/remote-mics", fields);
+  if (!result || result.error) return showError((result && result.error) || "Ismeretlen hiba");
+  const created = !editingRemoteMicId;
+  resetRemoteMicForm();
+  if (created) showToken(result.source.name, result.token, REMOTE_TOKEN_HINT);
+  await refreshRemoteMics();
+});
+
+document.getElementById("btnRemoteMicCancel").addEventListener("click", resetRemoteMicForm);
+
 document.querySelector('.nav-item[data-tab="devices"]').addEventListener("click", () => {
   loadDevices();
   loadDeviceLog();
+  loadRemoteMics();
 });
 
 setInterval(() => {
   if (isPageActive("devices")) {
     loadDevices();
     loadDeviceLog();
+    loadRemoteMics();
   } else {
     // a statuszsav hangszoro-szamlaloja mas fulon is frissul
     get("/api/devices").then((data) => renderDeviceSummary(data && data.devices)).catch(() => {});
@@ -1551,6 +1694,91 @@ function renderMeter(meterId, level) {
   meter.setAttribute("aria-valuetext", Number.isFinite(db) ? Math.round(db) + " dBFS" : "nincs jel");
 }
 
+// Hálózati mikrofon sávok: az id-lista változásakor épülnek újra, különben helyben frissülnek,
+// mert a gyakori lekérdezés húzás közben elrontaná a csúszkát.
+const remoteStrips = new Map();
+let remoteStripIds = "";
+
+function createRemoteStrip(item) {
+  const root = document.getElementById("remoteStripTemplate").content.firstElementChild.cloneNode(true);
+  root.dataset.remoteId = item.id;
+  const refs = {};
+  for (const role of ["title", "state", "onair", "meter", "fill", "fader", "value", "host", "power", "powerLabel"]) {
+    refs[role] = root.querySelector(`[data-role="${role}"]`);
+  }
+  const meterId = "meterRemote_" + item.id;
+  refs.meter.id = meterId;
+  refs.fill.id = meterId + "Fill";
+  refs.title.id = "stripRemoteTitle_" + item.id;
+  root.setAttribute("aria-labelledby", refs.title.id);
+  refs.fader.id = "mixerVolRemote_" + item.id;
+  refs.value.setAttribute("for", refs.fader.id);
+
+  const strip = { root, refs, meterId, debounce: null };
+  refs.fader.addEventListener("input", (e) => {
+    const value = Number(e.target.value);
+    refs.value.textContent = value + "%";
+    clearTimeout(strip.debounce);
+    strip.debounce = setTimeout(async () => {
+      strip.debounce = null;
+      const result = await post(`/api/remote-mics/${item.id}/volume`, { volume: value / 100 });
+      if (result && result.error) await showError(result.error);
+    }, 150);
+  });
+  refs.power.addEventListener("change", async (e) => {
+    const result = await post(`/api/remote-mics/${item.id}/live`, { live: e.target.checked });
+    if (result && result.error) await showError(result.error);
+    e.target.blur(); // a fókusz elengedése után a lekérdezés a valós állapotot mutatja
+    await pollMixer();
+  });
+  return strip;
+}
+
+function updateRemoteStrip(strip, item) {
+  const { root, refs, meterId } = strip;
+  const [tone, text] = REMOTE_MIC_STATE[item.state] || ["off", item.state];
+  const onAir = item.state === "on_air";
+  refs.title.textContent = item.name;
+  refs.host.textContent = item.host;
+  refs.meter.setAttribute("aria-label", item.name + " jelszintje");
+  refs.fader.setAttribute("aria-label", item.name + " hangereje");
+  root.classList.toggle("is-onair", onAir);
+  refs.onair.hidden = !onAir;
+  refs.state.hidden = onAir;
+  refs.state.dataset.tone = tone;
+  refs.state.textContent = text;
+  if (document.activeElement !== refs.power) refs.power.checked = item.live;
+  refs.powerLabel.textContent = item.live ? "Adás leállítása" : "Adás indítása";
+  renderMeter(meterId, item.level || 0);
+  if (document.activeElement !== refs.fader && !strip.debounce) {
+    refs.fader.value = Math.round(item.volume * 100);
+    setSliderFill(refs.fader);
+  }
+  refs.value.textContent = refs.fader.value + "%";
+}
+
+function renderRemoteStrips(items) {
+  const ids = items.map((item) => item.id).join("|");
+  if (ids !== remoteStripIds) {
+    remoteStripIds = ids;
+    const host = document.getElementById("mixerStrips");
+    const master = document.getElementById("stripMaster");
+    for (const strip of remoteStrips.values()) {
+      clearTimeout(strip.debounce);
+      host.removeChild(strip.root);
+    }
+    remoteStrips.clear();
+    for (const item of items) {
+      const strip = createRemoteStrip(item);
+      remoteStrips.set(item.id, strip);
+      host.insertBefore(strip.root, master);
+    }
+    host.style.setProperty("--strip-count", String(4 + items.length));
+    host.classList.toggle("has-remote", items.length > 0);
+  }
+  for (const item of items) updateRemoteStrip(remoteStrips.get(item.id), item);
+}
+
 // A mixer allapota egy helyen, a felso savban latszik.
 function setMixerStateView(tone, text) {
   const el = document.getElementById("headerMixer");
@@ -1569,7 +1797,9 @@ function renderMixer(data) {
   else if (mixerHasSignal) setMixerStateView("ok", "Mixer: van jel");
   else setMixerStateView("off", "Mixer: nincs jel");
   renderOutputSummary(data);
-  document.getElementById("onAirBadge").hidden = !data.mic_live;
+  const remoteMics = Array.isArray(data.remote_mics) ? data.remote_mics : [];
+  document.getElementById("onAirBadge").hidden = !data.mic_live && !remoteMics.some((item) => item.state === "on_air");
+  renderRemoteStrips(remoteMics);
 
   const flags = data.flags || [];
 
@@ -1776,6 +2006,7 @@ async function init() {
     loadLogs,
     loadDevices,
     loadDeviceLog,
+    loadRemoteMics,
     cancelEdit,
   ];
   for (const load of loaders) {

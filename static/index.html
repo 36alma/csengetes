@@ -66,7 +66,7 @@
     <!-- Mixer: csatornasavok -->
     <section class="page active" id="panel-mixer">
       <div class="mixer-layout">
-        <div class="strips">
+        <div class="strips" id="mixerStrips">
 
           <section class="panel strip" id="stripBell" aria-labelledby="stripBellTitle">
             <header class="strip-head">
@@ -166,7 +166,7 @@
             </footer>
           </section>
 
-          <section class="panel strip" aria-labelledby="stripMasterTitle">
+          <section class="panel strip" id="stripMaster" aria-labelledby="stripMasterTitle">
             <header class="strip-head">
               <h2 class="panel-title" id="stripMasterTitle">Master</h2>
               <span class="status" id="stripMasterState" data-tone="off">Leállítva</span>
@@ -208,6 +208,43 @@
           </section>
         </div>
       </div>
+
+      <!-- Hálózati mikrofon sáv: mikrofongépenként egy példány az app.js-ből -->
+      <template id="remoteStripTemplate">
+        <section class="panel strip">
+          <header class="strip-head">
+            <h2 class="panel-title" data-role="title"></h2>
+            <span class="status" data-role="state" data-tone="off">Ki</span>
+            <span class="badge-onair" data-role="onair" hidden>Adásban</span>
+          </header>
+          <div class="strip-body">
+            <div class="meter-group">
+              <div class="scale vu-scale" aria-hidden="true">
+                <span style="--at: 1">0</span><span style="--at: 0.9">−6</span><span style="--at: 0.8">−12</span><span style="--at: 0.6">−24</span><span style="--at: 0.4">−36</span><span style="--at: 0.2">−48</span><span style="--at: 0">−60</span>
+              </div>
+              <div class="meter" data-role="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div class="meter-fill" data-role="fill"></div>
+              </div>
+            </div>
+            <div class="scale fader-scale" aria-hidden="true">
+              <span style="--at: 1">100</span><span style="--at: 0.75">75</span><span style="--at: 0.5">50</span><span style="--at: 0.25">25</span><span style="--at: 0">0</span>
+            </div>
+            <input type="range" class="fader" data-role="fader" min="0" max="100" step="1" value="100">
+          </div>
+          <output class="strip-value num" data-role="value">100%</output>
+          <footer class="strip-foot">
+            <div class="field">
+              <span class="field-label">Mikrofongép</span>
+              <span class="strip-note" data-role="host"></span>
+            </div>
+            <label class="onair-toggle">
+              <input type="checkbox" data-role="power">
+              <svg class="icon"><use href="#i-mic"/></svg>
+              <span data-role="powerLabel">Adás indítása</span>
+            </label>
+          </footer>
+        </section>
+      </template>
     </section>
 
     <!-- Utemezes -->
@@ -494,6 +531,39 @@
           <pre class="log" id="deviceLogBox"></pre>
         </section>
       </div>
+
+      <section class="panel devices-panel mic-machines-panel" aria-labelledby="micMachinesTitle">
+        <header class="panel-header">
+          <h2 class="panel-title" id="micMachinesTitle">Mikrofongépek</h2>
+          <span class="edit-hint" id="remoteMicEditHint"></span>
+        </header>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr><th>Név</th><th class="col-ip">Cím</th><th class="col-status">Állapot</th><th class="col-date">Utolsó tokencsere</th><th class="col-date">Utolsó kapcsolat</th><th class="col-actions">Műveletek</th></tr>
+            </thead>
+            <tbody id="remoteMicsBody"></tbody>
+          </table>
+        </div>
+        <div class="panel-body device-form remote-mic-form">
+          <div class="field">
+            <label class="field-label" for="remoteMicName">Név</label>
+            <input class="input" id="remoteMicName" type="text" maxlength="64" placeholder="pl. Igazgatói iroda">
+          </div>
+          <div class="field">
+            <label class="field-label" for="remoteMicHost">IP-cím vagy gépnév</label>
+            <input class="input num" id="remoteMicHost" type="text" placeholder="192.168.1.60">
+          </div>
+          <div class="field">
+            <label class="field-label" for="remoteMicPort">Port</label>
+            <input class="input num" id="remoteMicPort" type="number" min="1" max="65535" placeholder="8770">
+          </div>
+          <div class="editor-actions device-form-actions">
+            <button class="btn btn-primary" id="btnRemoteMicSave">Hozzáadás</button>
+            <button class="btn" id="btnRemoteMicCancel" style="display:none">Mégse</button>
+          </div>
+        </div>
+      </section>
     </section>
 
     <!-- Naplo -->
@@ -553,6 +623,7 @@
   <div class="alert-box modal-box" role="dialog" aria-modal="true" aria-labelledby="tokenDeviceName">
     <div class="alert-title" id="tokenDeviceName"></div>
     <div class="alert-detail">Ez a token csak most látható. Másold ki, és állítsd be az eszközön; bezárás után nem kérhető le újra.</div>
+    <div class="alert-detail num" id="tokenHint" hidden></div>
     <input class="input modal-input" id="tokenValue" type="text" readonly>
     <div class="modal-actions">
       <button class="btn" id="btnTokenCopy">Másolás</button>

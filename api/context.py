@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from services.devices import DeviceStore, DeviceTelemetry, Enrollment, Presence
     from services.mixer import Mixer, MixerPlayer
     from services.music import MusicSession
+    from services.remote_mic.manager import RemoteMicManager
 
 
 def _new_music_session() -> "MusicSession":
@@ -37,6 +38,7 @@ class ApiContext:
     presence: "Presence"
     enrollment: "Enrollment | None" = None
     telemetry: "DeviceTelemetry | None" = None
+    remote_mics: "RemoteMicManager | None" = None
     music_session: "MusicSession" = field(default_factory=_new_music_session)  # zene es mixer kozos allapota
 
 

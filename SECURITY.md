@@ -30,7 +30,7 @@ A bejelentést a lehető leghamarabb megerősítjük, a javításról és a nyil
 
 ## Biztonsági modell
 
-A rendszer három, élesen elkülönített felületet használ.
+A rendszer három, élesen elkülönített felületet használ, és kifelé kapcsolódik a mikrofongépekhez.
 
 ### 1. Admin felület (`127.0.0.1:8765`)
 
@@ -59,10 +59,23 @@ A `X-Forwarded-For` fejlécet a szerver szándékosan **nem** veszi figyelembe (
 - Forrás-szűrés: alapértelmezetten csak privát hálózati címről fogad jelentkezést; az `enroll_cidr` ezt szűkíti.
 - A jelentkezők csak a memóriában, legfeljebb 64 db-ig, 10 percig várakoznak. **Az eszköz felvétele és a token kiadása mindig admin döntés**; ütközés (ismert UUID más IP-ről, megváltozott IP, foglalt IP) esetén a jóváhagyás letiltott.
 
+### 4. Mikrofongépek (`micserver`, alapértelmezetten TCP 8770 a mikrofonos gépen)
+
+Itt a mixer a kliens: a mikrofonos gépen futó WebSocket-szerverhez kapcsolódik, és a kapott hang a csengő és a zene mellé keveredik.
+
+- Minden kapcsolatnál kölcsönös HMAC-SHA256 challenge-response fut, friss nonce-okkal. A token nem megy át a hálózaton, és a gépnek is bizonyítania kell, hogy ismeri, különben a mixer nem fogad tőle hangot.
+- A hitelesítés előtt a gép nem nyitja meg a mikrofont. Egy gépet egyszerre egy mixer használhat.
+- A token külön a mikrofongépekhez tartozik: hangszóró-tokennel (`devices.json`) nem lehet hangot beadni.
+- A mixer 24 óránként automatikusan rotálja a tokent. Az új értéket mindkét fél a régiből és egy nyilvános nonce-ból számolja, csak tartós mentés után erősíti meg, és a gép az előző értéket addig elfogadja, amíg az új használata be nem bizonyosodik.
+- Sikertelen azonosításnál vagy hibás bizonyítéknál a mixer nem próbálkozik tovább, a sáv kapcsolója kikapcsol.
+- A mikrofon csak a mixer Adás kapcsolójára él, újraindítás után mindig ki van kapcsolva. A gép konzolján látszik, ha adásban van.
+
 ## Ismert korlátok
 
 Ezek a tervezésből adódó, tudatosan vállalt korlátok, nem sérülékenységek:
 
+- **A mikrofongép hangja titkosítatlan és aláíratlan.** A HMAC csak a kapcsolat felépítését és a rotációt védi. Aki a forgalom útjába áll (pl. ARP-hamisítással), a hangot lehallgathatja vagy kicserélheti. A megbízható hálózat itt is feltétel.
+- **A mikrofongép tokenje nyersen van a két gép lemezén** (`remote_mics.json`, `micserver/state.json`), mert a HMAC-hez mindkét félnek ismernie kell. Aki egyszer megszerzi, a hálózatot figyelve a rotációkat is követni tudja, ezért kiszivárgás esetén az **Új token** gombbal kell újat kiadni.
 - **Nincs TLS.** Az eszközszerver sima `ws://` kapcsolatot használ, a Bearer token és a hangadat titkosítatlanul megy a hálózaton. A rendszert megbízható, lehetőleg elkülönített (pl. külön VLAN) helyi hálózaton üzemeltesd, és ne tedd közvetlenül az internetre.
 - **Az IP-ellenőrzés nem hitelesítés.** Az IP-cím hamisítható a helyi hálózaton; ez a Bearer tokent kiegészíti, nem helyettesíti.
 - **Az `enroll_key` közös titok.** A firmware-be égetett kulcs kiolvasása (pl. fizikai hozzáféréssel) lehetővé teszi jelentkezési kérelmek küldését. Ez önmagában nem ad hozzáférést: a felvételt továbbra is az admin hagyja jóvá. Gyanú esetén cseréld a kulcsot.
@@ -72,7 +85,8 @@ Ezek a tervezésből adódó, tudatosan vállalt korlátok, nem sérülékenysé
 ## Üzemeltetési ajánlások
 
 - Az `enroll_key` legyen hosszú, véletlen érték (pl. `python -c "import secrets; print(secrets.token_hex(32))"`), és sose kerüljön verziókezelésbe.
-- A `config.json` és a `devices.json` titkos adatot tartalmazhat (kulcs, token-hash-ek, IP-k): a `.gitignore` kizárja őket, ne commitold és ne oszd meg.
+- A `config.json`, a `devices.json`, a `remote_mics.json` és a `micserver/state.json` titkos adatot tartalmazhat (kulcs, tokenek, token-hash-ek, IP-k): a `.gitignore` kizárja őket, ne commitold és ne oszd meg.
+- A mikrofongépek 8770-es portját tűzfalon korlátozd a mixer IP-címére.
 - Állíts be `enroll_cidr`-t a tényleges eszközhálózatra, és tűzfalon is korlátozd a 8766/8767 portokat.
 - Állíts rövidebb `device_token_days` értéket, ha az eszközök fizikailag kevésbé védett helyen vannak; a lejáró tokenekről a rendszer naplót ír.
 - Eltűnt vagy kompromittálódott eszköz tokenjét azonnal tiltsd le (`enabled = false`) vagy töröld az eszközt.
@@ -80,4 +94,4 @@ Ezek a tervezésből adódó, tudatosan vállalt korlátok, nem sérülékenysé
 
 ## Hatókör
 
-Hatókörbe tartozik a repó saját kódja (`server.py`, `device_server.py`, `api/`, `services/`, `static/`). Nem tartozik ide a harmadik féltől származó függőségek hibája (azt a saját upstream projektjüknek jelezd), valamint az olyan támadás, amely a gazdagép feletti már meglévő helyi rendszergazdai hozzáférést feltételezi.
+Hatókörbe tartozik a repó saját kódja (`server.py`, `device_server.py`, `api/`, `services/`, `static/`, `micserver/`). Nem tartozik ide a harmadik féltől származó függőségek hibája (azt a saját upstream projektjüknek jelezd), valamint az olyan támadás, amely a gazdagép feletti már meglévő helyi rendszergazdai hozzáférést feltételezi.

@@ -621,6 +621,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
   max-width: 1120px;
   min-height: 0;
 }
+/* mikrofongépekkel több sáv is lehet: nem nyomódnak össze, inkább görgethető a sor */
+.strips.has-remote {
+  grid-template-columns: repeat(var(--strip-count, 5), minmax(160px, 1fr));
+  max-width: none;
+  overflow-x: auto;
+}
+.strips.has-remote .strip-head { flex-wrap: wrap; }
+/* görgetés közben a Master mindig elérhető marad */
+.strips.has-remote #stripMaster { position: sticky; right: 0; z-index: 1; }
 /* a sorok (fejlec, fader, ertek, lab) minden savban egy vonalban vannak */
 .strip { display: grid; grid-row: 1 / -1; grid-template-rows: subgrid; grid-template-columns: minmax(0, 1fr); overflow: hidden; }
 .strip-head {
@@ -1015,6 +1024,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
   gap: var(--space-3) var(--space-4);
 }
 .device-form-actions { align-self: end; }
+.mic-machines-panel { flex: 0 0 auto; }
+.mic-machines-panel .table { min-width: 0; }
+.remote-mic-form {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1fr) auto;
+  border-top: 1px solid var(--border);
+}
+@media (max-width: 1000px) {
+  .remote-mic-form { grid-template-columns: minmax(0, 1fr); }
+}
 .panel-header .edit-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 1000px) {
   .devices-bottom { grid-template-columns: minmax(0, 1fr); height: auto; }

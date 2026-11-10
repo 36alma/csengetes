@@ -6,7 +6,8 @@ Iskolai csengetési rendszer asztali alkalmazásként: időzített csengetés, z
 
 - **Csengetési rendek**: több, névvel mentett rend, az aktív rend szerint automatikus csengetés.
 - **Pontos idő**: NTP-s vagy rendszeridő (`time_mode`).
-- **Hangkeverő**: a csengő, a zene és a mikrofon egy közös kimenetre keveredik; a force-os csengő elsőbbséget kap.
+- **Hangkeverő**: a csengő, a zene, a mikrofon és a hálózati mikrofongépek egy közös kimenetre keverednek; a force-os csengő elsőbbséget kap.
+- **Hálózati mikrofonok**: más gépek mikrofonja WebSocketen, tokenes azonosítással és automatikus token-rotációval kerül a keverőbe, gépenként külön sávval és hangerővel.
 - **Zene**: médiafájlok feltöltése és letöltés (yt-dlp).
 - **Hálózati eszközök**: ESP32 hangszórók a WebSocket hang-streamen kapják a hangot, token- és IP-alapú hitelesítéssel; az eszközök UDP-n jelentkezhetnek, az admin hagyja jóvá őket.
 
@@ -45,7 +46,13 @@ A `config_example.json` alapján. A fontosabb kulcsok:
 | `enroll_cidr` | a jelentkezést fogadó hálózat (üresen: privát címek) |
 | `enroll_port` | az UDP jelentkezési port (8767) |
 
-A `config.json`, a `devices.json`, a `media/` és a `schedules/` nincs verziókezelve.
+A `config.json`, a `devices.json`, a `remote_mics.json`, a `media/` és a `schedules/` nincs verziókezelve.
+
+## Hálózati mikrofonok
+
+A mikrofonos gépeken a `micserver` program fut, a mixer kapcsolódik rájuk. A telepítés és a beállítás lépései: [micserver/README.md](micserver/README.md).
+
+A gépeket az **Eszközök → Mikrofongépek** panelen lehet felvenni. A Mixer fülön gépenként saját sáv jelenik meg hangerővel és **Adás indítása** kapcsolóval; ez újraindítás után mindig ki van kapcsolva.
 
 ## ESP32 eszközök
 

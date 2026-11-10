@@ -114,7 +114,9 @@ def create_router(ctx: ApiContext) -> APIRouter:
     def get_state():
         mixer = ctx.mixer
         status = mixer.get_status()
+        remote_mics = getattr(ctx, "remote_mics", None)
         return {
+            "remote_mics": remote_mics.state() if remote_mics is not None else [],
             "running": mixer.running,
             "status": status.value,
             "flags": [f.name for f in MixerStatus if f and f in status],
