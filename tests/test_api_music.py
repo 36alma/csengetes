@@ -133,11 +133,30 @@ def test_storage_endpoint_defaults(env):
 
 def test_delete_blocks_traversal_and_missing(env):
     env.music_dir.mkdir(parents=True)
-    (env.music_dir.parent / "x").write_bytes(b"kivul")
+    (env.music_dir.parent / "x.mp3").write_bytes(b"kivul")
 
-    assert env.client.delete("/api/music/..%2Fx").status_code == 404
+    resp = env.client.post("/api/music/play-file", json={"filenames": ["../x.mp3"]})
+    assert resp.status_code == 404
+    assert "error" in resp.json()
+    assert (env.music_dir.parent / "x.mp3").exists()
     assert env.client.delete("/api/music/nincs.mp3").status_code == 404
-    assert (env.music_dir.parent / "x").exists()
+
+
+def test_delete_while_playing_is_409_until_done(env):
+    env.music_dir.mkdir(parents=True)
+    path = env.music_dir / "szol.mp3"
+    path.write_bytes(b"x")
+    svc = SimpleNamespace(status="playing", filename=[os.path.realpath(str(path))])
+    env.ctx.music_session._current = svc
+
+    resp = env.client.delete("/api/music/szol.mp3")
+    assert resp.status_code == 409
+    assert "error" in resp.json()
+    assert path.exists()
+
+    svc.status = "done"
+    assert env.client.delete("/api/music/szol.mp3").status_code == 200
+    assert not path.exists()
 
 
 def test_delete_removes_file(env):
