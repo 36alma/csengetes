@@ -37,6 +37,14 @@ def test_seek_clamps_and_returns_new_position(mixer):
     assert mixer.seek(1e9) == 10 * BS / SR
 
 
+def test_seek_huge_finite_values_clamp_instead_of_overflowing(mixer):
+    make(mixer)
+    assert mixer.seek(1e308) == 10 * BS / SR
+    assert mixer.position() == (10 * BS / SR, 10 * BS / SR)
+    assert mixer.seek(-1e308) == 0.0
+    assert mixer.position() == (0.0, 10 * BS / SR)
+
+
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
 def test_seek_nonfinite_raises(mixer, bad):
     make(mixer)

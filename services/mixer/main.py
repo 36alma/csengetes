@@ -304,7 +304,8 @@ class Mixer():
             playback = self._playback_of(kind)
             if playback is None:
                 return None
-            target = max(0, min(int(seconds * SAMPLE_RATE), len(self._file)))
+            # a szorzas es a limitalas lebegopontos: 1e308 * SR inf-re csordul, az int() nem fogadna el
+            target = int(max(0.0, min(seconds * SAMPLE_RATE, float(len(self._file)))))
             if target < self._file_pos:
                 playback.extra_s += (self._file_pos - target) / SAMPLE_RATE
             self._file_pos = target
