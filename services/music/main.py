@@ -16,6 +16,8 @@ from .library import track_duration
 
 logger = logging.getLogger("csengetes")
 
+LOOP_MODES = ("off", "track", "playlist")
+
 
 class MusicService:
     """Letolti a zenet, majd ha belefer a kovetkezo csengetesig, lejatssza.
@@ -43,13 +45,52 @@ class MusicService:
         self.error: str | None = None
         self.current: str | None = None  # a most szolo szam fajlneve
         self.progress: dict | None = None  # letoltes alatt: {percent, title, item}
+        self.index: int | None = None  # a most szolo szam indexe a filename-ben
+        self.loop_mode: str = "off"  # off|track|playlist
         self._cancel = threading.Event()
 
     def stop(self) -> None:
         self._cancel.set()
         self.current = None
+        self.index = None
         self.player.stop()
+        self.player.set_loop(False)
         self.status = "stopped"
+
+    def set_loop(self, mode: str) -> None:
+        if mode not in LOOP_MODES:
+            raise ValueError(f"Ismeretlen ismetlesi mod: {mode}")
+        self.loop_mode = mode
+        if self.status == "playing":
+            self.player.set_loop(mode == "track")
+
+    def seek(self, seconds: float) -> float | None:
+        """Tekeres a most szolo szamon belul; az uj pozicio, None ha nem szol zene."""
+        if self.status != "playing":
+            return None
+        return self.player.seek(seconds)
+
+    def seek_by(self, delta_s: float) -> float | None:
+        """Relativ tekeres: aktualis pozicio + delta; None, ha nincs pozicio."""
+        if self.status != "playing":
+            return None
+        pos = self.player.position()
+        if pos is None:
+            return None
+        return self.seek(pos[0] + delta_s)
+
+    @property
+    def next_track(self) -> str | None:
+        """A kovetkezo szam utvonala, None ha a sor vegen nincs tovabb."""
+        if self.index is None or not self.filename:
+            return None
+        if self.loop_mode == "track":
+            return self.filename[self.index]
+        if self.index + 1 < len(self.filename):
+            return self.filename[self.index + 1]
+        if self.loop_mode == "playlist":
+            return self.filename[0]
+        return None
 
     def run(self) -> None:
         """Hatterszalbol hivando: allapotot vezet, kivetelt nem dob."""
@@ -115,18 +156,31 @@ class MusicService:
         """Egymas utan jatssza le a szamokat egy hatterszalon."""
 
         def _run() -> None:
-            for index, filepath in enumerate(self.filename):
+            index, first, fails = 0, True, 0
+            while not self._cancel.is_set():
+                path = self.filename[index]
+                self.index, self.current = index, path
+                self.player.set_loop(self.loop_mode == "track")
+                result: dict = {}
+                self.player.play(path, blocking=True, force=self.now_play if first else False,
+                                 on_done=lambda err, r=result: r.update(err=err))
+                first = False
                 if self._cancel.is_set():
                     return
-                self.current = filepath
-                self.player.play(
-                    filepath,
-                    blocking=True,
-                    force=self.now_play if index == 0 else False,
-                    on_done=lambda err, p=filepath: err
-                    and logger.error("Zene lejatszasi hiba (%s): %s", p, err),
-                )
-            self.current = None
+                if result.get("err"):
+                    logger.error("Zene lejatszasi hiba (%s): %s", path, result["err"])
+                fails = fails + 1 if result.get("err") else 0
+                if fails >= len(self.filename):
+                    self.error = result["err"]; self.current = None; self.index = None
+                    self.player.set_loop(False); self.status = "error"
+                    return
+                index += 1
+                if index >= len(self.filename):
+                    if self.loop_mode != "playlist":
+                        break
+                    index = 0
+            self.current = None; self.index = None
+            self.player.set_loop(False)
             if not self._cancel.is_set():
                 self.status = "done"
 
