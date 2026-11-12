@@ -1,4 +1,5 @@
 import json
+import shutil
 import os
 
 import pytest
@@ -180,3 +181,64 @@ def test_failed_save_keeps_memory_unchanged(store, monkeypatch):
     with pytest.raises(OSError):
         store.add_tracks(pl["id"], ["uj.mp3"])
     assert store.get(pl["id"])["tracks"] == []
+
+
+def _backups(tmp_path):
+    return sorted(str(p) for p in tmp_path.glob("playlists.json.corrupt-*"))
+
+
+def test_corrupt_file_is_backed_up_before_first_write(tmp_path, path):
+    original = "{ez nem json"
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(original)
+    store = PlaylistStore(path)
+    store.create("Uj")
+
+    found = _backups(tmp_path)
+    assert len(found) == 1
+    with open(found[0], encoding="utf-8") as fh:
+        assert fh.read() == original
+    assert [p["name"] for p in PlaylistStore(path).list()] == ["Uj"]
+
+    store.create("Masik")  # masodik mutacio: nincs uj mentes
+    assert len(_backups(tmp_path)) == 1
+
+
+def test_wrong_shape_file_is_backed_up(tmp_path, path):
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(["nem", "objektum"], fh)
+    PlaylistStore(path).create("Uj")
+    assert len(_backups(tmp_path)) == 1
+
+
+def test_partially_skipped_file_is_backed_up(tmp_path, path):
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({"active": None, "playlists": [{"id": "a1", "name": "Jo", "tracks": []}, {"nev": "hibas"}]}, fh)
+    store = PlaylistStore(path)
+    assert [p["name"] for p in store.list()] == ["Jo"]
+    store.create("Uj")
+    assert len(_backups(tmp_path)) == 1
+
+
+def test_clean_file_makes_no_backup(tmp_path, path):
+    store = PlaylistStore(path)
+    store.create("Tiszta")
+    PlaylistStore(path).create("Masik")
+    assert _backups(tmp_path) == []
+
+
+def test_failed_backup_aborts_write(tmp_path, path, monkeypatch):
+    original = "{ez nem json"
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(original)
+    store = PlaylistStore(path)
+
+    def broken_copy(src, dst):
+        raise OSError("mentes hiba")
+
+    monkeypatch.setattr(shutil, "copy2", broken_copy)
+    with pytest.raises(OSError):
+        store.create("Uj")
+    assert store.list() == []
+    with open(path, encoding="utf-8") as fh:
+        assert fh.read() == original

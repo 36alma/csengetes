@@ -6,7 +6,9 @@ import copy
 import json
 import logging
 import os
+import shutil
 import threading
+import time
 import uuid
 
 logger = logging.getLogger("csengetes")
@@ -35,6 +37,7 @@ class PlaylistStore:
         self._lock = threading.Lock()
         self._playlists: list[dict] = []
         self._active: str | None = None
+        self._needs_backup = False  # a betoltes nem a teljes fajlt vette at: iras elott mentes kell
         self._load()
 
     # ---------- betoltes / mentes ----------
@@ -48,17 +51,30 @@ class PlaylistStore:
         except (OSError, ValueError):  # ValueError: JSONDecodeError es UnicodeDecodeError is
             raw = None
         if not isinstance(raw, dict) or not isinstance(raw.get("playlists"), list):
+            self._needs_backup = True
             logger.warning("A playlists.json serult vagy nem megfelelo alaku: ures playlist-lista indul.")
             return
         playlists = [item for item in raw["playlists"] if _valid_playlist(item)]
         if len(playlists) != len(raw["playlists"]):
+            self._needs_backup = True
             logger.warning("A playlists.json egy vagy tobb ervenytelen bejegyzese kihagyva.")
         self._playlists = playlists
         active = raw.get("active")
         self._active = active if any(p["id"] == active for p in playlists) else None
 
+    def _backup_original(self) -> None:
+        """A serult/reszben betoltott fajlt az elso iras elott megorizzuk (kulonben az iras eltorolne)."""
+        if not self._needs_backup or not os.path.isfile(self._path):
+            return
+        stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(time.time()))
+        backup = f"{self._path}.corrupt-{stamp}"
+        shutil.copy2(self._path, backup)  # ha ez hibazik, az iras sem tortenik meg
+        self._needs_backup = False
+        logger.warning("A betoltetlen playlists.json tartalma elmentve: %s", backup)
+
     def _commit(self, playlists: list[dict], active: str | None) -> None:
         """Eloszor mentes, csak siker eseten cserelodik a memoriabeli allapot."""
+        self._backup_original()
         data = {"active": active, "playlists": playlists}
         tmp = self._path + ".tmp"
         try:
