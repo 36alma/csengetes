@@ -36,7 +36,7 @@ class MusicSession:
             raise ValueError(f"Ismeretlen ismetlesi mod: {mode}")
         self.loop_mode = mode
         svc = self._current
-        if svc is not None and svc.status == "playing":
+        if svc is not None:
             svc.set_loop(mode)
 
     def seek(self, position_s: float | None = None, delta_s: float | None = None) -> float | None:

@@ -157,7 +157,7 @@ class MusicService:
 
         def _run() -> None:
             index, first, fails = 0, True, 0
-            while not self._cancel.is_set():
+            while self.filename and not self._cancel.is_set():
                 path = self.filename[index]
                 self.index, self.current = index, path
                 self.player.set_loop(self.loop_mode == "track")

@@ -299,3 +299,40 @@ def test_session_set_loop_rejects_unknown_mode_and_seek_idle_is_none():
     assert session.loop_mode == "off"
     assert session.seek(position_s=5) is None
     assert session.seek(delta_s=5) is None
+
+
+def test_empty_queue_ends_as_done_without_playing():
+    player = FakePlayer()
+    svc = _svc([], player)
+
+    svc._start_music()
+
+    assert wait_until(lambda: svc.status == "done")
+    assert player.played == []
+    assert svc.index is None and svc.current is None
+    assert player.loop is False
+
+
+def test_session_set_loop_applies_to_finished_service():
+    session = MusicSession()
+    svc = _svc(["/m/a.mp3"])
+    svc.status = "done"
+    session._current = svc
+
+    session.set_loop("playlist")
+
+    assert svc.loop_mode == "playlist"
+    assert session.status()["loop"] == "playlist"
+
+
+def test_session_set_loop_applies_to_downloading_service_without_touching_player():
+    session = MusicSession()
+    player = FakePlayer()
+    svc = _svc(["/m/a.mp3"], player)
+    svc.status = "downloading"
+    session._current = svc
+
+    session.set_loop("track")
+
+    assert svc.loop_mode == "track"
+    assert player.loop is False
