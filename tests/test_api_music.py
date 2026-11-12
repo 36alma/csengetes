@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from api import music as api_music
 from api import storage as api_storage
-from services.music import MusicService, MusicSession
+from services.music import MusicService, MusicSession, PlaylistStore
 from services.music import download
 
 ENVS = (
@@ -31,7 +31,8 @@ def env(tmp_path, monkeypatch):
     for e in ENVS:
         monkeypatch.delenv(e, raising=False)
     ctx = SimpleNamespace(media_dir=str(tmp_path / "media"), music_session=MusicSession(),
-                          music_player=None, time_src=None)
+                          music_player=None, time_src=None,
+                          playlists=PlaylistStore(str(tmp_path / "pl.json")))
     app = FastAPI()
     app.include_router(api_music.create_router(ctx))
     app.include_router(api_storage.create_router(ctx))

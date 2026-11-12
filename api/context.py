@@ -14,7 +14,7 @@ import time_source
 if TYPE_CHECKING:
     from services.devices import DeviceStore, DeviceTelemetry, Enrollment, Presence
     from services.mixer import Mixer, MixerPlayer
-    from services.music import MusicSession
+    from services.music import MusicSession, PlaylistStore
     from services.remote_mic.manager import RemoteMicManager
 
 
@@ -22,6 +22,12 @@ def _new_music_session() -> "MusicSession":
     from services.music import MusicSession
 
     return MusicSession()
+
+
+def _new_playlist_store() -> "PlaylistStore":
+    from services.music import PlaylistStore
+
+    return PlaylistStore()
 
 
 @dataclass
@@ -40,6 +46,7 @@ class ApiContext:
     telemetry: "DeviceTelemetry | None" = None
     remote_mics: "RemoteMicManager | None" = None
     music_session: "MusicSession" = field(default_factory=_new_music_session)  # zene es mixer kozos allapota
+    playlists: "PlaylistStore" = field(default_factory=_new_playlist_store)  # zenei playlistek (playlists.json)
 
 
 def storage_dirs(ctx: ApiContext) -> tuple[str, str]:

@@ -37,16 +37,17 @@ def _seek_seconds(value: Any) -> float | None:
     return seconds
 
 
+def music_path(filename: str) -> str | None:
+    """A zenei mappa beluli, letezo, zenei kiterjesztesu fajl utvonala, kulonben None."""
+    name = os.path.basename(str(filename or "").strip())
+    if not name.lower().endswith(library.MUSIC_EXTENSIONS):
+        return None
+    return library.resolve_track(music_download.DOWNLOAD_DIR, name)
+
+
 def create_router(ctx: ApiContext) -> APIRouter:
     router = APIRouter()
     session = ctx.music_session
-
-    def music_path(filename: str) -> str | None:
-        """A zenei mappa beluli, letezo, zenei kiterjesztesu fajl utvonala, kulonben None."""
-        name = os.path.basename(str(filename or "").strip())
-        if not name.lower().endswith(library.MUSIC_EXTENSIONS):
-            return None
-        return library.resolve_track(music_download.DOWNLOAD_DIR, name)
 
     def start_music(service: MusicService):
         """Elinditja a szolgaltatast; egyszerre csak egy zene futhat."""
@@ -58,6 +59,8 @@ def create_router(ctx: ApiContext) -> APIRouter:
     def list_music():
         os.makedirs(music_download.DOWNLOAD_DIR, exist_ok=True)
         items = library.list_tracks(music_download.DOWNLOAD_DIR)
+        for item in items:
+            item["playlists"] = ctx.playlists.playlists_containing(item["name"])
         return {"files": [t["name"] for t in items], "items": items}
 
     @router.post("/api/music/upload")
@@ -139,6 +142,32 @@ def create_router(ctx: ApiContext) -> APIRouter:
             )
         )
 
+    @router.post("/api/music/play-playlist")
+    def play_playlist(body: Any = Body(None)):
+        body = body if isinstance(body, dict) else {}
+        pid = body.get("id")
+        if pid is None:
+            pid = ctx.playlists.active
+            if pid is None:
+                return error("Nincs aktiv playlist.", 400)
+        try:
+            playlist = ctx.playlists.get(pid)
+        except KeyError:
+            return error("A playlist nem talalhato.", 404)
+        paths = [p for p in (music_path(name) for name in playlist["tracks"]) if p is not None]
+        if not paths:
+            return error("A playlist ures vagy a fajlok hianyoznak.", 400)
+        return start_music(
+            MusicService(
+                None,
+                ctx.music_player,
+                ctx.time_src,
+                force=bool(body.get("force", False)),
+                now_play=bool(body.get("now_play", False)),
+                files=paths,
+            )
+        )
+
     @router.get("/api/music/status")
     def music_status():
         return session.status()
@@ -184,7 +213,9 @@ def create_router(ctx: ApiContext) -> APIRouter:
         if svc is not None and svc.status == "playing" and path in [os.path.realpath(f) for f in svc.filename]:
             return error("A fajl jelenleg lejatszas alatt all.", 409)
         os.remove(path)
-        logger.info("Zene torolve: %s", os.path.basename(path))
+        name = os.path.basename(path)
+        ctx.playlists.remove_track_everywhere(name)
+        logger.info("Zene torolve: %s", name)
         return {"ok": True}
 
     return router
