@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
+from typing import Any
 
 from fastapi import APIRouter, Body, File, UploadFile
 from fastapi.responses import JSONResponse
@@ -19,6 +21,20 @@ from .media import too_large_error
 logger = logging.getLogger("csengetes")
 
 BUSY_MSG = "Mar fut egy zene, allitsd le elobb."
+MAX_SEEK_S = 1e9
+
+
+def _seek_seconds(value: Any) -> float | None:
+    """A tekeres ideje masodpercben; None, ha nem szam, bool, veges nelkuli vagy abszurd nagysagu."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        seconds = float(value)  # hatalmas int: OverflowError
+    except (OverflowError, ValueError, TypeError):
+        return None
+    if not math.isfinite(seconds) or abs(seconds) > MAX_SEEK_S:
+        return None
+    return seconds
 
 
 def create_router(ctx: ApiContext) -> APIRouter:
@@ -131,6 +147,33 @@ def create_router(ctx: ApiContext) -> APIRouter:
     def stop_music():
         session.stop(ctx.music_player)
         return {"ok": True}
+
+    @router.post("/api/music/seek")
+    def seek_music(body: Any = Body(None)):
+        if not isinstance(body, dict) or ("position_s" in body) == ("delta_s" in body):
+            return error("Pontosan egy mezo kell: position_s vagy delta_s.")
+        key = "position_s" if "position_s" in body else "delta_s"
+        seconds = _seek_seconds(body[key])
+        if seconds is None:
+            return error("Ervenytelen tekeres ertek.")
+        try:
+            pos = session.seek(**{key: seconds})
+        except (ValueError, OverflowError):
+            return error("Ervenytelen tekeres ertek.")
+        if pos is None:
+            return error("Nem szol zene.", 409)
+        return {"ok": True, "position_s": float(pos)}
+
+    @router.post("/api/music/loop")
+    def loop_music(body: Any = Body(None)):
+        mode = body.get("mode") if isinstance(body, dict) else None
+        if not isinstance(mode, str):
+            return error("Ervenytelen ismetlesi mod.")
+        try:
+            session.set_loop(mode)
+        except ValueError:
+            return error("Ervenytelen ismetlesi mod.")
+        return {"ok": True, "mode": mode}
 
     @router.delete("/api/music/{name}")
     def delete_music(name: str):

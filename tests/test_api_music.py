@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import sys
 from types import SimpleNamespace
@@ -232,3 +233,145 @@ def test_play_non_youtube_url_is_400(env, monkeypatch):
     assert resp.status_code == 400
     assert "error" in resp.json()
     assert calls == []
+
+
+class _ClampPlayer:
+    """Mixer helyettes: a tekeres a [0, hossz] tartomanyba szoritja, mint a valodi lejatszo."""
+
+    def __init__(self, duration=10.0):
+        self.duration = duration
+        self.pos = 0.0
+
+    def play(self, path, blocking=False, force=False, on_done=None):
+        pass
+
+    def position(self):
+        return (self.pos, self.duration)
+
+    def seek(self, seconds):
+        self.pos = max(0.0, min(seconds, self.duration))
+        return self.pos
+
+    def stop(self):
+        pass
+
+    def set_loop(self, enabled):
+        pass
+
+
+def _playing(env):
+    """Futo zene a sessionben (nincs szal): ket szam, az elso szol."""
+    player = _ClampPlayer()
+    names = [str(env.music_dir / "a.mp3"), str(env.music_dir / "b.mp3")]
+    svc = MusicService(None, player, None, files=names, force=True)
+    svc.status = "playing"
+    svc.index = 0
+    svc.current = names[0]
+    env.ctx.music_session._current = svc
+    return player
+
+
+def test_seek_position_ok(env):
+    player = _playing(env)
+
+    resp = env.client.post("/api/music/seek", json={"position_s": 2.5})
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "position_s": 2.5}
+    assert player.pos == 2.5
+
+
+def test_seek_delta_ok(env):
+    player = _playing(env)
+    player.pos = 2.0
+
+    resp = env.client.post("/api/music/seek", json={"delta_s": 3.0})
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "position_s": 5.0}
+    assert player.pos == 5.0
+
+
+def test_seek_nothing_playing_is_409(env):
+    resp = env.client.post("/api/music/seek", json={"position_s": 1})
+
+    assert resp.status_code == 409
+    assert resp.json() == {"error": "Nem szol zene."}
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        {"position_s": "x"},
+        {"position_s": True},
+        {"position_s": float("nan")},
+        {"position_s": float("inf")},
+        {"position_s": None},
+        {"position_s": [1]},
+        {"position_s": 10**400},
+        {"delta_s": 1e10},
+        {"position_s": 1, "delta_s": 1},
+        [1, 2],
+        None,
+    ],
+)
+def test_seek_rejects_garbage(env, body):
+    _playing(env)
+
+    # json=... nem kuldi a NaN/inf-et; a nyers szoveg a valodi kliens-esetet adja
+    resp = env.client.post("/api/music/seek", content=json.dumps(body),
+                           headers={"Content-Type": "application/json"})
+
+    assert resp.status_code == 400
+    assert "error" in resp.json()
+
+
+def test_seek_past_end_is_clamped_not_500(env):
+    player = _playing(env)
+
+    resp = env.client.post("/api/music/seek", json={"position_s": 1e6})
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "position_s": 10.0}
+
+    resp = env.client.post("/api/music/seek", json={"delta_s": -1e6})
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "position_s": 0.0}
+    assert player.pos == 0.0
+
+
+def test_loop_sets_mode_even_when_idle(env):
+    resp = env.client.post("/api/music/loop", json={"mode": "track"})
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "mode": "track"}
+    assert env.ctx.music_session.loop_mode == "track"
+    assert env.client.get("/api/music/status").json()["loop"] == "track"
+
+
+@pytest.mark.parametrize("body", [{"mode": "bogus"}, {"mode": None}, {"mode": 1}, {"mode": ["track"]}, {}, None])
+def test_loop_rejects_unknown_mode(env, body):
+    resp = env.client.post("/api/music/loop", json=body)
+
+    assert resp.status_code == 400
+    assert "error" in resp.json()
+    assert env.ctx.music_session.loop_mode == "off"
+
+
+def test_status_has_queue_next_position(env):
+    _playing(env)
+
+    data = env.client.get("/api/music/status").json()
+
+    assert set(data) == {"status", "files", "queue", "index", "current", "next", "loop",
+                         "position_s", "duration_s", "progress", "error"}
+    assert data["status"] == "playing"
+    assert data["files"] == data["queue"] == ["a.mp3", "b.mp3"]
+    assert data["index"] == 0
+    assert data["current"] == "a.mp3"
+    assert data["next"] == "b.mp3"
+    assert data["loop"] == "off"
+    assert data["position_s"] == 0.0
+    assert data["duration_s"] == 10.0
+    assert data["progress"] is None
+    assert data["error"] is None
