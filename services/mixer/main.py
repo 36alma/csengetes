@@ -1,4 +1,5 @@
 import logging
+import math
 import threading
 import time
 
@@ -77,12 +78,14 @@ def load_music(filepath: str) -> np.ndarray:
 class Playback:
     """Egy fajl lejatszasanak allapota: a hivo a `done` esemenyre var."""
 
-    def __init__(self, kind: str, duration_s: float):
+    def __init__(self, kind: str, duration_s: float, loop: bool = False):
         self.kind = kind
         self.duration_s = duration_s
         self.done = threading.Event()
         self.error: str | None = None
         self.cancelled = False
+        self.loop = loop  # vege utan elolrol indul, nem er veget
+        self.extra_s = 0.0  # a hossz fole eso (ismetelt vagy visszatekert) mp: a watchdog ezt is ad
 
     def cancel(self) -> None:
         self.cancelled = True
@@ -248,11 +251,11 @@ class Mixer():
             logger.error("A fajl nem dekodolhato (%s): %s", filepath, exc)
             raise AudioPlayerError("A fajl nem olvashato.") from exc
 
-    def play_samples(self, samples: np.ndarray, kind: str) -> Playback:
+    def play_samples(self, samples: np.ndarray, kind: str, loop: bool = False) -> Playback:
         """A mar dekodolt mintak beallitasa forraskent; a korabbi lejatszast megszakitja."""
         if kind not in KIND_FLAGS:
             raise ValueError(f"Ismeretlen forrastipus: {kind}")
-        playback = Playback(kind, len(samples) / SAMPLE_RATE)
+        playback = Playback(kind, len(samples) / SAMPLE_RATE, loop=loop)
         with self._file_lock:
             if self._playback is not None:
                 self._playback.cancel()
@@ -281,6 +284,45 @@ class Mixer():
             current.cancel()
             self._file = None
             self._playback = None
+
+    def _playback_of(self, kind: str | None) -> Playback | None:
+        """Az aktualis lejatszas, ha a fajtaja egyezik (kind=None: barmelyik). A _file_lock alatt hivando."""
+        playback = self._playback
+        if playback is None or (kind is not None and playback.kind != kind):
+            return None
+        return playback
+
+    def seek(self, seconds: float, kind: str | None = None) -> float | None:
+        """Tekeres az aktualis lejatszason belul; az uj pozicio (mp) a visszateresi ertek.
+
+        None, ha nincs lejatszas, vagy a fajtaja nem egyezik. Nem veges `seconds` eseten ValueError.
+        Visszafele tekeresnel a visszatekert ido a playback.extra_s-hez kerul, hogy a watchdog ne lassson.
+        """
+        if not math.isfinite(seconds):
+            raise ValueError("A tekeres ideje nem veges szam.")
+        with self._file_lock:
+            playback = self._playback_of(kind)
+            if playback is None:
+                return None
+            target = max(0, min(int(seconds * SAMPLE_RATE), len(self._file)))
+            if target < self._file_pos:
+                playback.extra_s += (self._file_pos - target) / SAMPLE_RATE
+            self._file_pos = target
+            return target / SAMPLE_RATE
+
+    def position(self, kind: str | None = None) -> tuple[float, float] | None:
+        """(pozicio mp, hossz mp) az aktualis lejatszasrol; None, ha nincs (vagy nem egyezik a fajta)."""
+        with self._file_lock:
+            if self._playback_of(kind) is None:
+                return None
+            return self._file_pos / SAMPLE_RATE, len(self._file) / SAMPLE_RATE
+
+    def set_loop(self, enabled: bool, kind: str | None = None) -> None:
+        """Az aktualis lejatszas ismetlese be/ki; nincs lejatszas vagy mas fajta: nincs hatasa."""
+        with self._file_lock:
+            playback = self._playback_of(kind)
+            if playback is not None:
+                playback.loop = bool(enabled)
 
     def start(self):
         """Keverő szal inditasa; a kesz csomagok a self.buffer-be kerulnek."""
@@ -320,9 +362,13 @@ class Mixer():
             self._file_pos += BLOCK_SIZE
             flag = KIND_FLAGS[self._playback.kind]
             if self._file_pos >= len(self._file):
-                self._playback.done.set()
-                self._file = None
-                self._playback = None
+                if self._playback.loop and len(self._file) > 0:
+                    self._playback.extra_s += len(self._file) / SAMPLE_RATE
+                    self._file_pos = 0
+                else:
+                    self._playback.done.set()
+                    self._file = None
+                    self._playback = None
             if len(block) < BLOCK_SIZE:
                 block = np.pad(block, (0, BLOCK_SIZE - len(block)))
             return block, flag

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import TYPE_CHECKING, Callable
 
 from .errors import AudioPlayerError
@@ -106,6 +107,7 @@ class MixerPlayer:
         self._device_lister = device_lister
         self._pending = 0  # folyamatban levo play() keresek (MAX_PENDING_PLAYS korlat)
         self._pending_lock = threading.Lock()
+        self._loop = False  # ismetles: a kovetkezo lejatszasra is erevenyes
 
     # ---------- eszkozok ----------
 
@@ -171,14 +173,30 @@ class MixerPlayer:
         """Szol-e barmilyen fajl a mixerben (csengo vagy zene, nem csak a sajat tipus)."""
         return self._mixer.file_playing
 
+    def seek(self, seconds: float) -> float | None:
+        """Tekeres a sajat tipusu lejatszason belul; az uj pozicio (mp), None ha nincs ilyen lejatszas."""
+        return self._mixer.seek(seconds, kind=self._kind)
+
+    def position(self) -> tuple[float, float] | None:
+        """(pozicio mp, hossz mp) a sajat tipusu lejatszasrol; None, ha nincs ilyen lejatszas."""
+        return self._mixer.position(kind=self._kind)
+
+    def set_loop(self, enabled: bool) -> None:
+        """Ismetles be/ki: a futo sajat tipusu lejatszasra is ratesszuk, a kovetkezore is ervenyes."""
+        self._loop = bool(enabled)
+        self._mixer.set_loop(self._loop, kind=self._kind)
+
     def _run(self, real_path: str, samples) -> None:
-        playback = self._mixer.play_samples(samples, self._kind)
+        playback = self._mixer.play_samples(samples, self._kind, loop=self._loop)
         self._gate.attach(self._kind, lambda: self._mixer.stop_file(playback))
-        timeout = min(MAX_PLAY_SECONDS, playback.duration_s + WATCHDOG_MARGIN_S)
-        if not playback.done.wait(timeout):
-            self._mixer.stop_file(playback)
-            logger.error("Lejatszas idotullepes: %s", real_path)
-            raise AudioPlayerError("A lejatszas idotullepes miatt megszakadt.")
+        started = time.monotonic()
+        # a keret a ciklusonkent nott (extra_s): a korbeero zene nem szakad meg a watchdogtol
+        while not playback.done.wait(0.5):
+            limit = min(MAX_PLAY_SECONDS, playback.duration_s + playback.extra_s + WATCHDOG_MARGIN_S)
+            if time.monotonic() - started > limit:
+                self._mixer.stop_file(playback)
+                logger.error("Lejatszas idotullepes: %s", real_path)
+                raise AudioPlayerError("A lejatszas idotullepes miatt megszakadt.")
         if playback.error:
             raise AudioPlayerError(playback.error)
 
