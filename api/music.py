@@ -5,35 +5,30 @@ from __future__ import annotations
 import logging
 import os
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, File, UploadFile
 from fastapi.responses import JSONResponse
+from werkzeug.utils import secure_filename
 
+import limits
 from services.music import download as music_download
-from services.music import MusicDownloadError, MusicService, validate_url
+from services.music import MusicDownloadError, MusicService, library, validate_url
 
-from .context import ApiContext, error
+from .context import ApiContext, error, storage_dirs
+from .media import too_large_error
 
 logger = logging.getLogger("csengetes")
-
-DOWNLOAD_DIR = music_download.DOWNLOAD_DIR
 
 
 def create_router(ctx: ApiContext) -> APIRouter:
     router = APIRouter()
     session = ctx.music_session
 
-    def music_files() -> list[str]:
-        os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-        return sorted(f for f in os.listdir(DOWNLOAD_DIR) if f.lower().endswith(".mp3"))
-
     def music_path(filename: str) -> str | None:
-        """A download/ mappan beluli, letezo fajl utvonala, kulonben None."""
-        safe = os.path.basename(str(filename or "").strip())
-        root = os.path.realpath(DOWNLOAD_DIR)
-        path = os.path.realpath(os.path.join(root, safe))
-        if not safe or not path.startswith(root + os.sep) or not os.path.isfile(path):
+        """A zenei mappa beluli, letezo, zenei kiterjesztesu fajl utvonala, kulonben None."""
+        name = os.path.basename(str(filename or "").strip())
+        if not name.lower().endswith(library.MUSIC_EXTENSIONS):
             return None
-        return path
+        return library.resolve_track(music_download.DOWNLOAD_DIR, name)
 
     def start_music(service: MusicService):
         """Elinditja a szolgaltatast; egyszerre csak egy zene futhat."""
@@ -43,7 +38,35 @@ def create_router(ctx: ApiContext) -> APIRouter:
 
     @router.get("/api/music")
     def list_music():
-        return {"files": music_files()}
+        os.makedirs(music_download.DOWNLOAD_DIR, exist_ok=True)
+        items = library.list_tracks(music_download.DOWNLOAD_DIR)
+        return {"files": [t["name"] for t in items], "items": items}
+
+    @router.post("/api/music/upload")
+    def upload_music(file: UploadFile | None = File(None)):
+        if file is None:
+            return error("Nincs csatolt fajl.")
+        filename = secure_filename(file.filename or "")
+        if not filename:
+            return error("Ervenytelen fajlnev.")
+        if not filename.lower().endswith(library.MUSIC_EXTENSIONS):
+            return error("Csak MP3/WAV/OGG fajl tolthato fel.")
+        root = music_download.DOWNLOAD_DIR
+        os.makedirs(root, exist_ok=True)
+        path = os.path.join(root, filename)
+        # Utkozes ellenorzese a masolas elott: copy_limited felulirna, sikertelenul torolne is.
+        if os.path.exists(path):
+            return error("Mar letezik ilyen nevu fajl.", 409)
+        if file.size is not None and file.size > limits.max_upload_bytes():
+            return too_large_error()
+        msg = limits.check_space(file.size or 0, *storage_dirs(ctx))
+        if msg:
+            logger.warning("Zene feltoltes elutasitva: nincs tarhely (%s)", filename)
+            return error(msg, 507)
+        if not limits.copy_limited(file.file, path, limits.max_upload_bytes()):
+            return too_large_error()
+        logger.info("Zene feltoltve: %s", filename)
+        return {"ok": True, "filename": filename}
 
     @router.post("/api/music/play")
     def play_music(body: dict = Body(...)):
