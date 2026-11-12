@@ -6,15 +6,13 @@ import logging
 import threading
 from typing import Optional
 
-from mutagen import MutagenError
-from mutagen.mp3 import MP3
-
 import config_store
 from services.mixer import MixerPlayer
 from schedule_store import load_obj
 from time_source import TimeSource
 
 from .download import MusicDownload
+from .library import track_duration
 
 logger = logging.getLogger("csengetes")
 
@@ -126,8 +124,8 @@ class MusicService:
         """Az osszes szam hossza masodpercben. Olvashatatlan fajl eseten kivetel."""
         total = 0.0
         for path in self.filename:
-            try:
-                total += MP3(path).info.length
-            except (MutagenError, OSError) as exc:
-                raise RuntimeError(f"A zene hossza nem olvashato ({path}): {exc}") from exc
+            duration = track_duration(path)
+            if duration is None:
+                raise RuntimeError(f"A zene hossza nem olvashato ({path})")
+            total += duration
         return total
