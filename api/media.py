@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
 
 from fastapi import APIRouter, Body, File, UploadFile
 from werkzeug.utils import secure_filename
 
 from services.mixer import AudioPlayerError
 from config_store import config
+import limits
 
-from .context import ApiContext, error
+from .context import ApiContext, error, storage_dirs
 
 logger = logging.getLogger("csengetes")
 
@@ -20,9 +20,9 @@ ALLOWED_EXTENSIONS = (".mp3", ".wav", ".ogg")
 
 
 def too_large_error():
-    limit = config.MAX_UPLOAD_MB
-    logger.warning("Feltoltes elutasitva: tul nagy fajl (limit: %s MB)", limit)
-    return error(f"A fajl tul nagy. A megengedett maximum: {limit} MB.", 413)
+    mb = limits.max_upload_bytes() / (1024 * 1024)
+    logger.warning("Feltoltes elutasitva: tul nagy fajl (limit: %s MB)", f"{mb:g}")
+    return error(f"A fajl tul nagy. A megengedett maximum: {mb:g} MB.", 413)
 
 
 def create_router(ctx: ApiContext) -> APIRouter:
@@ -43,11 +43,16 @@ def create_router(ctx: ApiContext) -> APIRouter:
         filename = secure_filename(file.filename or "")
         if not filename.lower().endswith(ALLOWED_EXTENSIONS):
             return error("Csak MP3/WAV/OGG fajl tolthato fel.")
-        if file.size is not None and file.size > config.MAX_UPLOAD_MB * 1024 * 1024:
+        if file.size is not None and file.size > limits.max_upload_bytes():
             return too_large_error()
+        msg = limits.check_space(file.size or 0, *storage_dirs(ctx))
+        if msg:
+            logger.warning("Feltoltes elutasitva: nincs tarhely (%s)", filename)
+            return error(msg, 507)
         os.makedirs(ctx.media_dir, exist_ok=True)
-        with open(os.path.join(ctx.media_dir, filename), "wb") as out:
-            shutil.copyfileobj(file.file, out)
+        path = os.path.join(ctx.media_dir, filename)
+        if not limits.copy_limited(file.file, path, limits.max_upload_bytes()):
+            return too_large_error()
         logger.info("Media feltoltve: %s", filename)
         return {"ok": True, "filename": filename}
 

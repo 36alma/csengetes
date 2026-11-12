@@ -24,6 +24,7 @@ from api import ApiContext, register_api
 from api.context import error
 from api.media import too_large_error
 from config_store import config
+import limits
 import schedule_store
 import scheduler as scheduler_mod
 import time_source
@@ -112,7 +113,7 @@ async def _auth_and_limits(request: Request, call_next):
         return error("Forbidden", 403)
 
     length = request.headers.get("content-length")
-    if length and length.isdigit() and int(length) > config.MAX_UPLOAD_MB * 1024 * 1024:
+    if length and length.isdigit() and int(length) > limits.max_upload_bytes():
         return too_large_error()
 
     response = await call_next(request)
@@ -136,24 +137,22 @@ def index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
-register_api(
-    app,
-    ApiContext(
-        player=player,
-        music_player=music_player,
-        mixer=mixer,
-        time_src=time_src,
-        scheduler=scheduler,
-        media_dir=MEDIA_DIR,
-        save_config=_save_config,
-        ws_authorized=lambda ws: ws.cookies.get(SESSION_COOKIE) in _sessions,
-        devices=devices,
-        presence=presence,
-        enrollment=enrollment,
-        telemetry=telemetry,
-        remote_mics=remote_mics,
-    ),
+API_CONTEXT = ApiContext(
+    player=player,
+    music_player=music_player,
+    mixer=mixer,
+    time_src=time_src,
+    scheduler=scheduler,
+    media_dir=MEDIA_DIR,
+    save_config=_save_config,
+    ws_authorized=lambda ws: ws.cookies.get(SESSION_COOKIE) in _sessions,
+    devices=devices,
+    presence=presence,
+    enrollment=enrollment,
+    telemetry=telemetry,
+    remote_mics=remote_mics,
 )
+register_api(app, API_CONTEXT)
 
 
 # A statikus fajlok az API utvonalak utan kerulnek felcsatolasra

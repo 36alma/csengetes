@@ -42,6 +42,13 @@ class ApiContext:
     music_session: "MusicSession" = field(default_factory=_new_music_session)  # zene es mixer kozos allapota
 
 
+def storage_dirs(ctx: ApiContext) -> tuple[str, str]:
+    """A tarhelykorlat ala eso mappak: csengohangok es zenei letoltesek."""
+    from services.music import download
+
+    return ctx.media_dir, download.DOWNLOAD_DIR
+
+
 def error(message: str, status: int = 400) -> JSONResponse:
     """Egyseges hibavalasz: {"error": "..."} a megadott statuszkoddal."""
     return JSONResponse({"error": message}, status_code=status)
