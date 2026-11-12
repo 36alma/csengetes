@@ -108,6 +108,7 @@ download/*
 *.bat
 devices.json
 remote_mics.json*
+playlists.json*
 micserver/state.json*
 
 local/
