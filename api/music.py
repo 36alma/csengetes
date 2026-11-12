@@ -11,12 +11,14 @@ from werkzeug.utils import secure_filename
 
 import limits
 from services.music import download as music_download
-from services.music import MusicDownloadError, MusicService, library, validate_url
+from services.music import MusicDownload, MusicDownloadError, MusicService, library, validate_url
 
 from .context import ApiContext, error, storage_dirs
 from .media import too_large_error
 
 logger = logging.getLogger("csengetes")
+
+BUSY_MSG = "Mar fut egy zene, allitsd le elobb."
 
 
 def create_router(ctx: ApiContext) -> APIRouter:
@@ -33,7 +35,7 @@ def create_router(ctx: ApiContext) -> APIRouter:
     def start_music(service: MusicService):
         """Elinditja a szolgaltatast; egyszerre csak egy zene futhat."""
         if not session.start(service):
-            return error("Mar fut egy zene, allitsd le elobb.", 409)
+            return error(BUSY_MSG, 409)
         return JSONResponse({"ok": True, "started": True}, status_code=202)
 
     @router.get("/api/music")
@@ -79,6 +81,17 @@ def create_router(ctx: ApiContext) -> APIRouter:
             urls = [validate_url(u) for u in urls]
         except MusicDownloadError as exc:
             return error(str(exc))
+        busy = session.current
+        if busy is not None and busy.status in ("downloading", "playing"):
+            return error(BUSY_MSG, 409)
+        try:
+            items = MusicDownload(urls).check_limits()
+        except MusicDownloadError as exc:
+            return error(str(exc), 400)
+        msg = limits.check_space(sum(item["est_bytes"] for item in items), *storage_dirs(ctx))
+        if msg:
+            logger.warning("Zene letoltes elutasitva: nincs tarhely")
+            return error(msg, 507)
         return start_music(
             MusicService(
                 urls,

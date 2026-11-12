@@ -38,10 +38,11 @@ class MusicSession:
     def status(self) -> dict:
         svc = self._current
         if svc is None:
-            return {"status": "idle", "files": [], "current": None, "error": None}
+            return {"status": "idle", "files": [], "current": None, "error": None, "progress": None}
         return {
             "status": svc.status,
             "files": [os.path.basename(f) for f in svc.filename],
             "current": os.path.basename(svc.current) if svc.current else None,
             "error": svc.error,
+            "progress": svc.progress,
         }

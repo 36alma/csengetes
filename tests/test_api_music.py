@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from api import music as api_music
 from api import storage as api_storage
-from services.music import MusicSession
+from services.music import MusicService, MusicSession
 from services.music import download
 
 ENVS = (
@@ -181,3 +181,54 @@ def test_non_music_extensions_are_not_listed_or_addressable(env):
     assert env.client.post("/api/music/play-file", json={"filenames": ["jegyzet.txt"]}).status_code == 404
     assert (env.music_dir / "letoltes.part").exists()
     assert (env.music_dir / "jegyzet.txt").exists()
+
+
+def test_play_rejects_too_long_video_with_400(env, monkeypatch):
+    def too_long(self):
+        raise api_music.MusicDownloadError("tul hosszu")
+
+    monkeypatch.setattr(api_music.MusicDownload, "check_limits", too_long)
+
+    resp = env.client.post("/api/music/play", json={"urls": ["https://youtu.be/abc"]})
+
+    assert resp.status_code == 400
+    assert resp.json() == {"error": "tul hosszu"}
+
+
+def test_play_storage_full_is_507(env, monkeypatch):
+    monkeypatch.setattr(
+        api_music.MusicDownload,
+        "check_limits",
+        lambda self: [{"title": "Hosszu", "duration_s": 600.0, "est_bytes": 10**12}],
+    )
+
+    resp = env.client.post("/api/music/play", json={"urls": ["https://youtu.be/abc"]})
+
+    assert resp.status_code == 507
+    assert "tarhely" in resp.json()["error"]
+    assert env.ctx.music_session.current is None
+
+
+def test_play_busy_is_409_before_metadata_check(env, monkeypatch):
+    calls = []
+    monkeypatch.setattr(api_music.MusicDownload, "check_limits", lambda self: calls.append(self) or [])
+    busy = MusicService(["https://youtu.be/elso"], None, None)
+    busy.status = "downloading"
+    env.ctx.music_session._current = busy
+
+    resp = env.client.post("/api/music/play", json={"urls": ["https://youtu.be/masodik"]})
+
+    assert resp.status_code == 409
+    assert "error" in resp.json()
+    assert calls == []
+
+
+def test_play_non_youtube_url_is_400(env, monkeypatch):
+    calls = []
+    monkeypatch.setattr(api_music.MusicDownload, "check_limits", lambda self: calls.append(self) or [])
+
+    resp = env.client.post("/api/music/play", json={"urls": ["https://example.com/video"]})
+
+    assert resp.status_code == 400
+    assert "error" in resp.json()
+    assert calls == []

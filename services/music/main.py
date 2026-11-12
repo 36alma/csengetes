@@ -42,6 +42,7 @@ class MusicService:
         self.status = "pending"  # pending|downloading|playing|skipped|done|stopped|error
         self.error: str | None = None
         self.current: str | None = None  # a most szolo szam fajlneve
+        self.progress: dict | None = None  # letoltes alatt: {percent, title, item}
         self._cancel = threading.Event()
 
     def stop(self) -> None:
@@ -66,7 +67,19 @@ class MusicService:
             self.status = "error"
 
     def prepare(self) -> list[str]:
-        self.filename = MusicDownload(self.url)()
+        finished = 0
+
+        def on_progress(event: dict) -> None:
+            nonlocal finished
+            if event["status"] == "finished":
+                finished += 1
+            self.progress = {"percent": event["percent"], "title": event["title"], "item": finished + 1}
+
+        self.progress = {"percent": None, "title": None, "item": 1}
+        try:
+            self.filename = MusicDownload(self.url, progress_cb=on_progress)()
+        finally:
+            self.progress = None
         return self.filename
 
     def __call__(self) -> bool:
