@@ -103,6 +103,15 @@ def test_download_missing_requested_downloads_raises_clear_error(fake, monkeypat
         MusicDownload([URL])()
 
 
+def test_download_max_filesize_skip_gives_clear_error(fake, monkeypatch):
+    # yt-dlp skipped the download above max_filesize: requested_downloads has no filepath.
+    use(monkeypatch, {"title": "Big Song", "requested_downloads": [{"format_id": "251"}]})
+    with pytest.raises(MusicDownloadError) as exc:
+        MusicDownload([URL])()
+    assert "Big Song" in str(exc.value)
+    assert str(exc.value) != "'filepath'"
+
+
 def test_download_removes_oversized_file(fake, monkeypatch):
     monkeypatch.setenv("CSENGETES_MAX_DOWNLOAD_MB", "0.0001")
     big = fake / "big.mp3"

@@ -136,9 +136,11 @@ class MusicDownload:
                             continue
                         title = str(entry.get("title") or url)
                         downloads = entry.get("requested_downloads")
-                        if not downloads:
+                        # yt-dlp skips a download above max_filesize silently: no filepath is set.
+                        path_raw = (downloads[0] or {}).get("filepath") if downloads else None
+                        if not path_raw or not os.path.isfile(path_raw):
                             raise MusicDownloadError(f"A fajl tul nagy vagy nem toltheto le: {title}")
-                        path = os.path.abspath(downloads[0]["filepath"])
+                        path = os.path.abspath(path_raw)
                         size = os.path.getsize(path)
                         if size > max_bytes:
                             os.remove(path)
