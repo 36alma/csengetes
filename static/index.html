@@ -41,6 +41,10 @@
       <span class="next-bell"><span class="num" id="nextBellTime">–</span><span class="num muted" id="nextBellCountdown"></span></span>
     </div>
     <div class="topbar-end">
+      <span class="storage" id="storageBar" title="Zenei tárhely">
+        <span class="storage-text num" id="storageText">–</span>
+        <span class="storage-track"><span class="storage-fill" id="storageFill"></span></span>
+      </span>
       <span class="badge-onair" id="onAirBadge" hidden>Adásban</span>
       <span class="status" id="headerMixer" data-tone="off" title="Mixer állapota"><span id="headerMixerText">Mixer: leállítva</span></span>
     </div>
@@ -350,6 +354,8 @@
             <h2 class="panel-title" id="musicTitle">Zenék</h2>
             <span class="status" id="musicStatus" data-tone="off">Nincs aktív zene</span>
             <div class="panel-actions">
+              <button class="btn" id="btnMusicUpload"><svg class="icon"><use href="#i-upload"/></svg>Feltöltés</button>
+              <input type="file" id="musicFileInput" accept=".mp3,.wav,.ogg" multiple hidden>
               <button class="btn btn-icon" id="btnMusicRefresh" title="Lista frissítése" aria-label="Zenék frissítése"><svg class="icon"><use href="#i-refresh"/></svg></button>
             </div>
           </header>
@@ -373,13 +379,20 @@
             </div>
           </div>
           <div class="panel-body list-area">
-            <select class="listbox" id="musicListbox" size="8" aria-label="Letöltött zenék"></select>
-            <div class="list-empty" id="musicEmpty" hidden>Még nincs letöltött zene. Illessz be fent egy YouTube-linket.</div>
+            <ul class="track-list" id="musicList" aria-label="Letöltött zenék" hidden></ul>
+            <div class="list-state" id="musicLoading" role="status" hidden>Betöltés…</div>
+            <div class="list-state list-error" id="musicErrorBox" role="alert" hidden>
+              <span>A zenék listája nem tölthető be.</span>
+              <button class="btn btn-sm" id="btnMusicRetry">Újra</button>
+            </div>
+            <div class="list-empty" id="musicEmpty" hidden>Még nincs zene. Tölts fel egy fájlt vagy illessz be egy YouTube-linket.</div>
           </div>
           <footer class="panel-footer">
-            <button class="btn" id="btnMusicPlayFile"><svg class="icon"><use href="#i-play"/></svg>Lejátszás</button>
+            <label class="track-select-all"><input type="checkbox" id="musicSelectAll" aria-label="Mindet kijelöli"> Mind</label>
+            <span class="muted num" id="musicSelectedCount">0 kijelölve</span>
+            <button class="btn" id="btnMusicPlaySelected" disabled><svg class="icon"><use href="#i-play"/></svg>Lejátszás</button>
             <button class="btn" id="btnMusicStop"><svg class="icon"><use href="#i-stop"/></svg>Leállítás</button>
-            <button class="btn btn-danger push-right" id="btnMusicDelete"><svg class="icon"><use href="#i-trash"/></svg>Törlés</button>
+            <button class="btn btn-danger push-right" id="btnMusicDeleteSelected" disabled><svg class="icon"><use href="#i-trash"/></svg>Törlés</button>
           </footer>
         </section>
       </div>

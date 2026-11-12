@@ -1535,6 +1535,30 @@ setInterval(() => {
   }
 }, 4000);
 
+// Formazo segedek: a tarhelysav es a lista is hasznalja
+function formatBytes(n) {
+  if (!Number.isFinite(n) || n < 0) return "–";
+  const units = [["GB", 1024 ** 3], ["MB", 1024 ** 2], ["KB", 1024]];
+  for (const [unit, size] of units) {
+    if (n >= size) return (n / size).toLocaleString("hu-HU", { maximumFractionDigits: 1 }) + " " + unit;
+  }
+  return n.toLocaleString("hu-HU") + " B";
+}
+
+function formatTime(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "–:––";
+  const total = Math.floor(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = String(total % 60).padStart(2, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
+}
+
+function setButtonBusy(btn, busy) {
+  btn.classList.toggle("is-loading", busy);
+  btn.disabled = busy;
+}
+
 // ---------- zene (YouTube) ----------
 
 const MUSIC_STATUS_TEXT = {
@@ -1548,33 +1572,150 @@ const MUSIC_STATUS_TEXT = {
   error: "Hiba",
 };
 
-async function loadMusicList() {
-  const data = await get("/api/music");
-  const box = document.getElementById("musicListbox");
-  const selected = box.value;
-  box.innerHTML = "";
-  for (const name of (data && data.files) || []) {
-    const opt = document.createElement("option");
-    opt.value = name;
-    opt.textContent = name;
-    box.appendChild(opt);
-  }
-  if (selected) box.value = selected;
-  document.getElementById("musicEmpty").hidden = box.options.length > 0;
+let currentMusic = null;
+let lastMusicStatus = null;
+let musicItems = [];              // a legutobbi GET /api/music elemei, listasorrendben
+let musicSelection = new Set();   // kijelolt fajlnevek
+const musicRowRefs = new Map();   // fajlnev -> { row, nameEl, check }
+let musicLoaded = false;          // volt-e mar sikeres listazas (betoltes-allapot csak elsore)
+let musicLoadSeq = 0;
+
+// Ikon-gomb a sorokhoz (SVG-szimbolum-hivatkozas, DOM-metodusokkal)
+function iconButton(className, icon, label) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "btn btn-icon " + className;
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "icon");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", "#" + icon);
+  svg.appendChild(use);
+  btn.appendChild(svg);
+  return btn;
+}
+
+// A lista, az ures es a hiba allapot kozul pontosan egy lathato
+function showMusicView(view) {
+  document.getElementById("musicLoading").hidden = view !== "loading";
+  document.getElementById("musicErrorBox").hidden = view !== "error";
+  document.getElementById("musicEmpty").hidden = view !== "empty";
+  document.getElementById("musicList").hidden = view !== "list";
+}
+
+function buildTrackRow(item) {
+  const row = document.createElement("li");
+  row.dataset.name = item.name;
+
+  const check = document.createElement("input");
+  check.type = "checkbox";
+  check.className = "track-check";
+  check.checked = musicSelection.has(item.name);
+  check.setAttribute("aria-label", "Kijelölés: " + item.name);
+  check.addEventListener("change", () => {
+    if (check.checked) musicSelection.add(item.name);
+    else musicSelection.delete(item.name);
+    updateMusicSelection();
+  });
+
+  const nameEl = document.createElement("span");
+  nameEl.className = "track-name";
+  nameEl.textContent = item.name;
+
+  const time = document.createElement("span");
+  time.className = "track-meta";
+  time.textContent = formatTime(item.duration_s);
+
+  const size = document.createElement("span");
+  size.className = "track-meta";
+  size.textContent = formatBytes(item.size_bytes);
+
+  const play = iconButton("track-play", "i-play", "Lejátszás: " + item.name);
+  play.addEventListener("click", async () => {
+    await guardMusic(() => startMusic("/api/music/play-file", { filenames: [item.name] }, item.name));
+  });
+
+  const del = iconButton("track-delete btn-danger", "i-trash", "Törlés: " + item.name);
+  del.addEventListener("click", () => deleteMusicNames([item.name]));
+
+  row.append(check, nameEl, time, size, play, del);
+  musicRowRefs.set(item.name, { row, nameEl, check });
+  return row;
+}
+
+function renderMusicList(items) {
+  musicRowRefs.clear();
+  const rows = items.map(buildTrackRow);
+  document.getElementById("musicList").replaceChildren(...rows);
   markCurrentMusic();
 }
 
-let currentMusic = null;
+function selectedTrackNames() {
+  return musicItems.map((item) => item.name).filter((name) => musicSelection.has(name));
+}
+
+function updateMusicSelection() {
+  const names = selectedTrackNames();
+  const total = musicItems.length;
+  document.getElementById("musicSelectedCount").textContent = names.length + " kijelölve";
+  const all = document.getElementById("musicSelectAll");
+  all.disabled = total === 0;
+  all.checked = total > 0 && names.length === total;
+  all.indeterminate = names.length > 0 && names.length < total;
+  document.getElementById("btnMusicPlaySelected").disabled = names.length === 0;
+  document.getElementById("btnMusicDeleteSelected").disabled = names.length === 0;
+}
+
+async function loadMusicList() {
+  const seq = ++musicLoadSeq;
+  if (!musicLoaded) showMusicView("loading");
+  let data = null;
+  try {
+    data = await get("/api/music");
+  } catch (e) {
+    data = null;
+  }
+  if (seq !== musicLoadSeq) return; // egy ujabb listazas felulirja
+  if (!data || !Array.isArray(data.items)) {
+    showMusicView("error");
+    return;
+  }
+  musicLoaded = true;
+  musicItems = data.items;
+  const names = new Set(musicItems.map((item) => item.name));
+  musicSelection = new Set([...musicSelection].filter((name) => names.has(name)));
+  renderMusicList(musicItems);
+  showMusicView(musicItems.length ? "list" : "empty");
+  updateMusicSelection();
+}
 
 function markCurrentMusic() {
-  for (const opt of document.getElementById("musicListbox").options) {
-    const playing = opt.value === currentMusic;
-    opt.classList.toggle("now-playing", playing);
-    opt.textContent = (playing ? "▶ " : "") + opt.value;
+  for (const [name, ref] of musicRowRefs) {
+    const playing = name === currentMusic;
+    ref.row.classList.toggle("now-playing", playing);
+    ref.nameEl.textContent = (playing ? "▶ " : "") + name;
   }
 }
 
-let lastMusicStatus = null;
+async function refreshStorage() {
+  let data = null;
+  try {
+    data = await get("/api/storage");
+  } catch (e) {
+    data = null;
+  }
+  const bar = document.getElementById("storageBar");
+  if (!data || !Number.isFinite(data.used_bytes) || !(data.max_bytes > 0)) {
+    document.getElementById("storageText").textContent = "–";
+    return;
+  }
+  const ratio = data.used_bytes / data.max_bytes;
+  document.getElementById("storageText").textContent = `${formatBytes(data.used_bytes)} / ${formatBytes(data.max_bytes)}`;
+  document.getElementById("storageFill").style.width = Math.min(100, ratio * 100).toFixed(1) + "%";
+  bar.classList.toggle("is-warn", ratio >= 0.9);
+  bar.classList.toggle("is-full", ratio >= 1);
+}
 
 async function loadMusicStatus() {
   const data = await get("/api/music/status");
@@ -1587,8 +1728,11 @@ async function loadMusicStatus() {
   setStatus("musicStatus", data.status === "playing" ? "ok" : data.status === "error" ? "warn" : "off", text);
   document.getElementById("musicStatus").title = text;
   document.getElementById("btnMusicStop").disabled = !MUSIC_BUSY.includes(data.status);
-  // letoltes utan frissitjuk a listat
-  if (lastMusicStatus === "downloading" && data.status !== "downloading") loadMusicList();
+  // letoltes utan frissitjuk a listat es a tarhelyet
+  if (lastMusicStatus === "downloading" && data.status !== "downloading") {
+    loadMusicList();
+    refreshStorage();
+  }
   lastMusicStatus = data.status;
 }
 
@@ -1606,6 +1750,55 @@ async function startMusic(path, body, label) {
   loadMusicStatus();
 }
 
+// Hiba eseten (halozati hiba is) felhasznaloi uzenet, nem nyers kivetel
+async function guardMusic(task) {
+  try {
+    await task();
+  } catch (e) {
+    await showError("A szerver nem érhető el.");
+  }
+}
+
+// Ideiglenes torles (F2 cserelje a Zenék-kezelo felulettel): megerosites, DELETE, lista es tarhely frissitese
+async function deleteMusicNames(names) {
+  if (!names.length) return;
+  const ok = await modal.confirm(names.join("\n"), { title: "Zenék törlése", okText: "Törlés", danger: true });
+  if (!ok) return;
+  const failed = [];
+  for (const name of names) {
+    let result = null;
+    try {
+      result = await api("/api/music/" + encodeURIComponent(name), { method: "DELETE" });
+    } catch (e) {
+      result = null;
+    }
+    if (result && result.ok) {
+      musicSelection.delete(name);
+    } else {
+      failed.push(`${name}: ${(result && result.error) || "a törlés nem sikerült"}`);
+    }
+  }
+  for (const message of failed) await showError(message);
+  await loadMusicList();
+  refreshStorage();
+}
+
+// Egy fajl feltoltese; hiba eseten a hibauzenettel ter vissza, sikernel null-lal
+async function uploadMusicFile(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  let result = null;
+  try {
+    // nem api(): az JSON fejlecet tesz, a multipart feltoltesnek nem szabad
+    const res = await fetch(API + "/api/music/upload", { method: "POST", body: formData });
+    result = await res.json();
+  } catch (e) {
+    result = null;
+  }
+  if (result && result.ok) return null;
+  return (result && result.error) || "a feltöltés nem sikerült";
+}
+
 document.getElementById("btnMusicPlay").addEventListener("click", async () => {
   const url = document.getElementById("musicUrl").value.trim();
   if (!url) {
@@ -1615,13 +1808,10 @@ document.getElementById("btnMusicPlay").addEventListener("click", async () => {
   await startMusic("/api/music/play", { urls: [url] }, url);
 });
 
-document.getElementById("btnMusicPlayFile").addEventListener("click", async () => {
-  const name = document.getElementById("musicListbox").value;
-  if (!name) {
-    await showError("Válassz ki egy fájlt a listából.");
-    return;
-  }
-  await startMusic("/api/music/play-file", { filenames: [name] }, name);
+document.getElementById("btnMusicPlaySelected").addEventListener("click", async () => {
+  const names = selectedTrackNames();
+  if (!names.length) return;
+  await guardMusic(() => startMusic("/api/music/play-file", { filenames: names }, names.join(", ")));
 });
 
 document.getElementById("btnMusicStop").addEventListener("click", async () => {
@@ -1629,26 +1819,47 @@ document.getElementById("btnMusicStop").addEventListener("click", async () => {
   loadMusicStatus();
 });
 
-document.getElementById("btnMusicDelete").addEventListener("click", async () => {
-  const name = document.getElementById("musicListbox").value;
-  if (!name) {
-    await showError("Válassz ki egy fájlt a listából.");
-    return;
+document.getElementById("btnMusicDeleteSelected").addEventListener("click", () => deleteMusicNames(selectedTrackNames()));
+
+document.getElementById("musicSelectAll").addEventListener("change", (e) => {
+  musicSelection = e.target.checked ? new Set(musicItems.map((item) => item.name)) : new Set();
+  for (const [name, ref] of musicRowRefs) ref.check.checked = musicSelection.has(name);
+  updateMusicSelection();
+});
+
+document.getElementById("btnMusicUpload").addEventListener("click", () => {
+  document.getElementById("musicFileInput").click();
+});
+
+document.getElementById("musicFileInput").addEventListener("change", async (e) => {
+  const files = Array.from(e.target.files || []);
+  e.target.value = "";
+  if (!files.length) return;
+  const btn = document.getElementById("btnMusicUpload");
+  setButtonBusy(btn, true);
+  const failed = [];
+  try {
+    for (const file of files) {
+      const error = await uploadMusicFile(file);
+      if (error) failed.push(`${file.name}: ${error}`);
+    }
+  } finally {
+    setButtonBusy(btn, false);
   }
-  if (!(await modal.confirm(name, { title: "Fájl törlése", okText: "Törlés", danger: true }))) return;
-  const result = await api("/api/music/" + encodeURIComponent(name), { method: "DELETE" });
-  if (result && result.error) {
-    await showError(result.error);
-    return;
-  }
+  // a hibauzenetek a feltoltesek utan, egymas utan jonnek (nem allitjak meg a tobbi fajlt)
+  for (const message of failed) await showError(message);
   await loadMusicList();
+  refreshStorage();
 });
 
 document.getElementById("btnMusicRefresh").addEventListener("click", loadMusicList);
+document.getElementById("btnMusicRetry").addEventListener("click", loadMusicList);
 
 setInterval(() => {
   if (isPageActive("library")) loadMusicStatus();
 }, 2000);
+
+setInterval(refreshStorage, 30000);
 
 // ---------- Mixer ful ----------
 // A felulet csak azt mutatja, hogy van-e jel es mi szol (zene, mikrofon);
@@ -2003,6 +2214,7 @@ async function init() {
     loadUploadLimit,
     loadMusicList,
     loadMusicStatus,
+    refreshStorage,
     loadLogs,
     loadDevices,
     loadDeviceLog,

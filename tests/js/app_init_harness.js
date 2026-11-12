@@ -87,6 +87,7 @@ const document = {
   querySelector: () => universal(),
   querySelectorAll: () => [],
   createElement: () => universal(),
+  createElementNS: () => universal(),
   addEventListener: () => {},
   activeElement: null,
 };
