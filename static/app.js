@@ -1900,16 +1900,23 @@ async function removePlaylistTrack(playlist, name) {
   await loadMusicList();
 }
 
-document.getElementById("playlistSelect").addEventListener("change", (e) => guardMusic(async () => {
-  const result = await post("/api/playlists/active", { id: e.target.value });
+document.getElementById("playlistSelect").addEventListener("change", async (e) => {
+  let result = null;
+  try {
+    result = await post("/api/playlists/active", { id: e.target.value });
+  } catch (err) {
+    result = null; // halozati hiba: ugyanugy kezeljuk, mint a nem JSON valaszt
+  }
   const error = playlistError(result);
   if (error) {
+    // a select a gyorsitotarbol (az aktiv playlist) allitodik vissza, nem a bongeszo kivalasztasabol
+    renderPlaylists();
     loadPlaylists();
     await showError(error);
     return;
   }
   await loadPlaylists();
-}));
+});
 
 document.getElementById("btnPlaylistNew").addEventListener("click", () => guardMusic(async () => {
   const input = await modal.prompt("Playlist neve:", { title: "Új playlist", placeholder: "pl. Szünet" });
