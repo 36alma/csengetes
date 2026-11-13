@@ -1572,6 +1572,11 @@ const MUSIC_STATUS_TEXT = {
   error: "Hiba",
 };
 
+// A YouTube elo-ellenorzes (hossz, tarhely) a keres kozben, a szolgaltatas elinditasa elott fut:
+// amig tart, a poll nem irhatja felul az "Ellenorzes..." szoveget, es a gomb nem nyomhato ujra
+const MUSIC_PRECHECK_TEXT = "Ellenőrzés…";
+let musicPrechecking = false;
+
 let currentMusic = null;
 let lastMusicStatus = null;
 let musicItems = [];              // a legutobbi GET /api/music elemei, listasorrendben
@@ -2060,10 +2065,11 @@ function renderMusicStatus(data) {
   const playing = data.status === "playing";
   currentMusic = playing ? data.current || null : null;
 
-  let text = MUSIC_STATUS_TEXT[data.status] || data.status;
-  if (data.error) text += ": " + data.error;
+  const checking = musicPrechecking && !MUSIC_BUSY.includes(data.status);
+  let text = checking ? MUSIC_PRECHECK_TEXT : MUSIC_STATUS_TEXT[data.status] || data.status;
+  if (data.error && !checking) text += ": " + data.error;
   if (currentMusic) text += " – " + currentMusic;
-  setStatus("musicStatus", playing ? "ok" : data.status === "error" ? "warn" : "off", text);
+  setStatus("musicStatus", playing ? "ok" : data.status === "error" && !checking ? "warn" : "off", text);
   document.getElementById("musicStatus").title = text;
   markCurrentMusic();
 
@@ -2146,7 +2152,8 @@ async function seekMusic(body) {
   loadMusicStatus();
 }
 
-async function startMusic(path, body, label) {
+// onResponse: a szerver valaszanak megerkezese utan, az esetleges hibaablak elott hivodik egyszer
+async function startMusic(path, body, label, onResponse) {
   let result = null;
   try {
     result = await post(path, {
@@ -2157,6 +2164,7 @@ async function startMusic(path, body, label) {
   } catch (e) {
     result = null;
   }
+  if (onResponse) onResponse();
   if (result === null) {
     await showError("A szerver nem érhető el.");
     return;
@@ -2248,12 +2256,28 @@ async function uploadMusicFile(file) {
 }
 
 document.getElementById("btnMusicPlay").addEventListener("click", async () => {
+  if (musicPrechecking) return; // az elozo kerest a szerver meg ellenorzi
   const url = document.getElementById("musicUrl").value.trim();
   if (!url) {
     await showError("Adj meg egy YouTube linket.");
     return;
   }
-  await startMusic("/api/music/play", { urls: [url] }, url);
+  // a szerver a keres kozben, a letoltes elott (hossz, tarhely) halozaton ellenoriz: addig nincs
+  // szolgaltatas, tehat az allapot "Nincs aktiv zene" lenne, a gomb pedig masodszor is nyomhato
+  const btn = document.getElementById("btnMusicPlay");
+  musicPrechecking = true;
+  setButtonBusy(btn, true);
+  setStatus("musicStatus", "off", MUSIC_PRECHECK_TEXT);
+  const finish = () => {
+    musicPrechecking = false;
+    setButtonBusy(btn, false);
+  };
+  try {
+    await guardMusic(() => startMusic("/api/music/play", { urls: [url] }, url, finish));
+  } finally {
+    finish();
+    loadMusicStatus(); // visszaall a valos allapot
+  }
 });
 
 document.getElementById("btnMusicPlaySelected").addEventListener("click", async () => {
