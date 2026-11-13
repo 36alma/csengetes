@@ -126,3 +126,74 @@ def test_init_renders_devices_with_buffer_and_esp_log(tmp_path):
     assert result["unhandled"] == []
     broken = _run(tmp_path, {"/api/devices": {"devices": [dict(device, buffer={"fill_ms": "x"})]}})
     assert broken["unhandled"] == []
+
+
+MUSIC_LIST = {"files": ["a.mp3", "b.wav"], "items": [
+    {"name": "a.mp3", "size_bytes": 1234567, "duration_s": 93.4, "playlists": ["Szünet"]},
+    {"name": "b.wav", "size_bytes": 10, "duration_s": None, "playlists": []},
+]}
+STORAGE = {"used_bytes": 1288490188, "max_bytes": 5368709120, "max_upload_bytes": 20971520,
+           "max_download_bytes": 104857600, "max_yt_minutes": 15}
+PLAYLISTS = {"active": "p1", "playlists": [
+    {"id": "p1", "name": "Szünet", "tracks": ["a.mp3", "b.wav"]},
+    {"id": "p2", "name": "Reggel", "tracks": []},
+]}
+MUSIC_PATHS = ("/api/music", "/api/storage", "/api/playlists")
+
+
+def _music_loader_errors(result):
+    names = ("loadMusicList", "refreshStorage", "loadPlaylists")
+    return [line for line in result["loaderErrors"] if any(name in line for name in names)]
+
+
+def test_music_panel_requests_on_init(tmp_path):
+    result = _run(tmp_path, {"/api/music": MUSIC_LIST, "/api/storage": STORAGE, "/api/playlists": PLAYLISTS})
+    for path in MUSIC_PATHS:
+        assert path in result["fetched"], result["fetched"]
+    assert result["unhandled"] == []
+    assert _music_loader_errors(result) == []
+    assert result["musicRows"] == ["a.mp3", "b.wav"]
+    assert result["storageText"] == "1,2 GB / 5 GB"
+    assert result["playlistOptions"] == ["Szünet", "Reggel"]
+    assert result["playlistRows"] == ["a.mp3", "b.wav"]
+
+
+def test_music_panel_survives_null_responses(tmp_path):
+    result = _run(tmp_path, {"/api/music": None, "/api/storage": None, "/api/playlists": None})
+    for path in MUSIC_PATHS:
+        assert path in result["fetched"], result["fetched"]
+    assert result["unhandled"] == []
+    assert _music_loader_errors(result) == []
+    assert result["storageText"] == "–"
+
+
+def test_music_panel_survives_malformed_payloads(tmp_path):
+    result = _run(tmp_path, {"/api/music": {"items": "x"}, "/api/playlists": {"playlists": 5},
+                             "/api/storage": {"used_bytes": "x"}})
+    assert result["unhandled"] == []
+    assert _music_loader_errors(result) == []
+    assert result["musicRows"] == [] and result["playlistOptions"] == [] and result["playlistRows"] == []
+    assert result["storageText"] == "–"
+
+
+# Tiszta segedek: a harness a betoltes utan kiertekeli ezeket az app.js-ben (responses.__eval__)
+EVAL_CASES = [
+    ("formatBytes(1288490188)", "1,2 GB"),
+    ("formatBytes(891289600)", "850 MB"),
+    ("formatBytes(12288)", "12 KB"),
+    ("formatTime(65)", "1:05"),
+    ("formatTime(3725)", "1:02:05"),
+    ("formatTime(null)", "–:––"),
+    ('buildDeleteMessage(["a.mp3"], [], null)', "a.mp3"),
+    ('buildDeleteMessage(["1.mp3","2.mp3","3.mp3","4.mp3","5.mp3","6.mp3","7.mp3"], [], null)',
+     "1.mp3\n2.mp3\n3.mp3\n4.mp3\n5.mp3\n+2 további"),
+    ('buildDeleteMessage(["a.mp3","b.wav"], [], "a.mp3")',
+     "a.mp3 (éppen szól)\nb.wav\nA lejátszás leáll."),
+    ('buildDeleteMessage(["a.mp3"], [{"name":"a.mp3","size_bytes":1,"duration_s":null,"playlists":["A","B"]}], null)',
+     "a.mp3 (playlistben: A, B)"),
+]
+
+
+def test_music_helpers_format_and_build_messages(tmp_path):
+    result = _run(tmp_path, {"__eval__": [expr for expr, _ in EVAL_CASES]})
+    assert result["eval"] == [expected for _, expected in EVAL_CASES]

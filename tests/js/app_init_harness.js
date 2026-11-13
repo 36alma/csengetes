@@ -46,6 +46,7 @@ function makeSelect() {
       if (prop === "children" || prop === "options") return children;
       if (prop === "value") return value;
       if (prop === "appendChild") return (el) => { children.push(el); return el; };
+      if (prop === "replaceChildren") return (...els) => { children.length = 0; children.push(...els); };
       return t[prop];
     },
     set(t, prop, v) {
@@ -68,6 +69,7 @@ function makeContainer() {
       if (prop === "inserts") return inserts;
       if (prop === "insertBefore") return (el) => { children.push(el); inserts += 1; return el; };
       if (prop === "removeChild") return (el) => { children.splice(children.indexOf(el), 1); return el; };
+      if (prop === "replaceChildren") return (...els) => { children.length = 0; children.push(...els); };
       return t[prop];
     },
     set(t, prop, value) {
@@ -77,11 +79,12 @@ function makeContainer() {
   });
 }
 
+const CONTAINER_IDS = new Set(["musicList", "playlistTracks"]); // a sorok listaja: a children kovetheto
 const elements = { mixerStrips: makeContainer() };
 const loaderErrors = [];
 const document = {
   getElementById(id) {
-    if (!elements[id]) elements[id] = id.endsWith("Select") ? makeSelect() : universal();
+    if (!elements[id]) elements[id] = id.endsWith("Select") ? makeSelect() : CONTAINER_IDS.has(id) ? makeContainer() : universal();
     return elements[id];
   },
   querySelector: () => universal(),
@@ -129,6 +132,11 @@ function report() {
   const select = elements["mixerInputSelect"];
   const options = select ? Array.from(select.children).map((o) => ({ text: o.textContent, disabled: !!o.disabled })) : [];
   const strips = elements.mixerStrips;
+  const playlistSelect = elements.playlistSelect;
+  // a tiszta segedek erteke az app.js betoltese utan (a responses.__eval__ kifejezesei)
+  const evaluated = (responses.__eval__ || []).map((expr) => {
+    try { return vm.runInContext(expr, sandbox); } catch (e) { return "ERROR: " + e.message; }
+  });
   process.stdout.write(JSON.stringify({
     fetched,
     unhandled,
@@ -138,6 +146,11 @@ function report() {
     onAirHidden: elements.onAirBadge ? elements.onAirBadge.hidden : null,
     strips: strips.children.map((el) => el.dataset.remoteId),
     stripInserts: strips.inserts,
+    musicRows: elements.musicList ? elements.musicList.children.map((el) => el.dataset.name) : [],
+    playlistRows: elements.playlistTracks ? elements.playlistTracks.children.map((el) => el.dataset.name) : [],
+    playlistOptions: playlistSelect ? Array.from(playlistSelect.children).map((o) => o.textContent) : [],
+    storageText: elements.storageText ? elements.storageText.textContent : null,
+    eval: evaluated,
   }));
 }
 
