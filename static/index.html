@@ -397,6 +397,17 @@
               </label>
             </div>
           </div>
+          <div class="panel-body music-playlist">
+            <div class="playlist-toolbar">
+              <select class="select" id="playlistSelect" aria-label="Aktív playlist" disabled></select>
+              <button class="btn btn-sm" id="btnPlaylistNew">Új</button>
+              <button class="btn btn-sm" id="btnPlaylistRename" disabled>Átnevezés</button>
+              <button class="btn btn-sm btn-danger" id="btnPlaylistDelete" disabled>Törlés</button>
+              <button class="btn btn-sm" id="btnPlaylistPlay" disabled><svg class="icon"><use href="#i-play"/></svg>Lejátszás</button>
+            </div>
+            <ul class="playlist-tracks" id="playlistTracks" aria-label="Playlist számai" hidden></ul>
+            <p class="muted" id="playlistEmpty" hidden></p>
+          </div>
           <div class="panel-body list-area">
             <ul class="track-list" id="musicList" aria-label="Letöltött zenék" hidden></ul>
             <div class="list-state" id="musicLoading" role="status" hidden>Betöltés…</div>
@@ -411,6 +422,8 @@
             <span class="muted num" id="musicSelectedCount">0 kijelölve</span>
             <button class="btn" id="btnMusicPlaySelected" disabled><svg class="icon"><use href="#i-play"/></svg>Lejátszás</button>
             <button class="btn" id="btnMusicStop"><svg class="icon"><use href="#i-stop"/></svg>Leállítás</button>
+            <select class="select playlist-add-select" id="addToPlaylistSelect" aria-label="Playlist, ahová hozzáadja" disabled></select>
+            <button class="btn" id="btnMusicAddToPlaylist" disabled>Hozzáadás playlisthez</button>
             <button class="btn btn-danger push-right" id="btnMusicDeleteSelected" disabled><svg class="icon"><use href="#i-trash"/></svg>Törlés</button>
           </footer>
         </section>

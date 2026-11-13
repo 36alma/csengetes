@@ -21,6 +21,9 @@ MUSIC_IDS = {
     # lejatszas-allapot, tekeres, loop, letoltesi folyamat (Task 14, F3)
     "nowTitle", "nowNext", "queueList", "musicSeek", "musicTime", "btnSeekBack", "btnSeekFwd", "btnMusicLoop",
     "musicDownloadBox", "musicDownloadBar", "musicDownloadText", "musicErrorMsg",
+    # playlistek felulete (Task 15, F4)
+    "playlistSelect", "btnPlaylistNew", "btnPlaylistRename", "btnPlaylistDelete", "btnPlaylistPlay",
+    "playlistTracks", "playlistEmpty", "addToPlaylistSelect", "btnMusicAddToPlaylist",
 }
 
 

@@ -873,7 +873,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .list-area { position: relative; flex: 1; min-height: 160px; }
 .list-area + .list-area,
-.music-download + .list-area { padding-top: 0; }
+.music-download + .list-area,
+.music-playlist + .list-area { padding-top: 0; }
 .list-area .listbox { flex: 1; }
 /* Zenelista: nyitott, gorgetheto sorlista; a sorok a listaterulet szelessegehez torednek */
 .track-list {
@@ -926,6 +927,35 @@ button, input, select, textarea { font: inherit; color: inherit; }
   pointer-events: none;
 }
 .music-download { flex-shrink: 0; }
+/* Playlistek: eszkoztar, a kivalasztott playlist szamai (sorrend huzassal es gombokkal) */
+.music-playlist { flex-shrink: 0; }
+.playlist-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.playlist-toolbar .select { flex: 1 1 160px; min-width: 0; }
+.playlist-add-select { max-width: 200px; }
+.playlist-tracks {
+  max-height: 180px;
+  margin: 0;
+  padding: var(--space-1);
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+}
+.playlist-tracks li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+}
+.playlist-tracks li:hover { background: var(--surface-hover); }
+.playlist-tracks li.now-playing { color: var(--ok); font-weight: 600; }
+.playlist-tracks li.dragging { opacity: 0.4; }
+.playlist-tracks li.drag-over { box-shadow: inset 0 2px 0 var(--accent); }
+.playlist-tracks .track-name { flex: 1 1 0; }
+.playlist-tracks .btn-icon { flex-shrink: 0; }
+.playlist-handle { color: var(--text-muted); cursor: grab; user-select: none; }
 /* Most szol, sor, tekeres, loop es letoltesi folyamat */
 .music-now { flex-shrink: 0; }
 .now-info { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }

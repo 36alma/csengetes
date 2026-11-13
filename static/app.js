@@ -1622,6 +1622,7 @@ function buildTrackRow(item) {
   const nameEl = document.createElement("span");
   nameEl.className = "track-name";
   nameEl.textContent = item.name;
+  if (Array.isArray(item.playlists) && item.playlists.length) nameEl.title = "Playlistben: " + item.playlists.join(", ");
 
   const time = document.createElement("span");
   time.className = "track-meta";
@@ -1665,6 +1666,7 @@ function updateMusicSelection() {
   all.indeterminate = names.length > 0 && names.length < total;
   document.getElementById("btnMusicPlaySelected").disabled = names.length === 0;
   document.getElementById("btnMusicDeleteSelected").disabled = names.length === 0;
+  document.getElementById("btnMusicAddToPlaylist").disabled = names.length === 0 || playlistsData.playlists.length === 0;
 }
 
 async function loadMusicList() {
@@ -1696,6 +1698,7 @@ function markCurrentMusic() {
     ref.row.classList.toggle("now-playing", playing);
     ref.nameEl.textContent = (playing ? "▶ " : "") + name;
   }
+  for (const li of document.querySelectorAll("#playlistTracks li")) li.classList.toggle("now-playing", li.dataset.name === currentMusic);
 }
 
 async function refreshStorage() {
@@ -1716,6 +1719,280 @@ async function refreshStorage() {
   bar.classList.toggle("is-warn", ratio >= 0.9);
   bar.classList.toggle("is-full", ratio >= 1);
 }
+
+// ---------- playlistek ----------
+
+let playlistsData = { active: null, playlists: [] };
+let playlistsLoadSeq = 0;
+let playlistDragIndex = null;     // a huzott sor indexe dragstart es dragend/drop kozott
+
+function activePlaylist() {
+  return playlistsData.playlists.find((p) => p.id === playlistsData.active) || null;
+}
+
+// A felulet altal mutatott playlist: az aktiv, ennek hijan az elso (csak a megjelenitest erinti, kerest nem indit)
+function shownPlaylist() {
+  return activePlaylist() || playlistsData.playlists[0] || null;
+}
+
+// Hibaszoveg egy playlist-valaszbol (null, ha sikeres); halozati hiba es nem JSON eseten is van szoveg
+function playlistError(result) {
+  if (result && result.ok) return null;
+  return (result && result.error) || "A szerver nem érhető el.";
+}
+
+async function loadPlaylists() {
+  const seq = ++playlistsLoadSeq;
+  let data = null;
+  try {
+    data = await get("/api/playlists");
+  } catch (e) {
+    data = null;
+  }
+  if (seq !== playlistsLoadSeq) return; // egy ujabb lekeres felulirja
+  if (!data || !Array.isArray(data.playlists)) return; // hiba: a korabbi allapot marad
+  playlistsData = { active: data.active ?? null, playlists: data.playlists };
+  renderPlaylists();
+}
+
+function renderPlaylists() {
+  const { playlists } = playlistsData;
+  const shown = shownPlaylist();
+  const has = playlists.length > 0;
+  for (const id of ["playlistSelect", "addToPlaylistSelect"]) {
+    const select = document.getElementById(id);
+    const previous = select.value;
+    select.replaceChildren(...playlists.map((p) => {
+      const option = document.createElement("option");
+      option.value = p.id;
+      option.textContent = p.name;
+      return option;
+    }));
+    // a hozzaadas cel-playlistjet megorzi, ha az meg letezik; a szuro a szerver aktiv playlistjet koveti
+    const keep = id === "addToPlaylistSelect" && playlists.some((p) => p.id === previous);
+    select.value = keep ? previous : shown ? shown.id : "";
+  }
+  for (const id of ["playlistSelect", "btnPlaylistRename", "btnPlaylistDelete", "btnPlaylistPlay", "addToPlaylistSelect"]) {
+    document.getElementById(id).disabled = !has;
+  }
+  renderPlaylistTracks(shown);
+  updateMusicSelection();
+}
+
+// A kivalasztott playlist szamainak ujraepitese (sorrend, eltavolitas, huzas, now-playing jeloles)
+function renderPlaylistTracks(playlist) {
+  const tracks = playlist && Array.isArray(playlist.tracks) ? playlist.tracks : [];
+  const rows = tracks.map((name, index) => buildPlaylistRow(playlist, name, index, tracks.length));
+  const list = document.getElementById("playlistTracks");
+  list.replaceChildren(...rows);
+  list.hidden = rows.length === 0;
+  const empty = document.getElementById("playlistEmpty");
+  empty.textContent = playlist
+    ? "A playlist üres. Jelölj ki számokat a listában, és add hozzá."
+    : "Nincs playlist. Hozz létre egyet.";
+  empty.hidden = rows.length > 0;
+  markCurrentMusic();
+}
+
+// Szoveges gomb a playlist-sorokhoz (▲ ▼ ✕)
+function textButton(text, label) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "btn btn-sm btn-icon";
+  btn.textContent = text;
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+  return btn;
+}
+
+function clearPlaylistDrag() {
+  playlistDragIndex = null;
+  for (const el of document.querySelectorAll("#playlistTracks li")) el.classList.remove("dragging", "drag-over");
+}
+
+function buildPlaylistRow(playlist, name, index, count) {
+  const row = document.createElement("li");
+  row.dataset.index = String(index);
+  row.dataset.name = name;
+  row.draggable = true;
+
+  const handle = document.createElement("span");
+  handle.className = "playlist-handle";
+  handle.setAttribute("aria-hidden", "true");
+  handle.textContent = "⠿";
+
+  const position = document.createElement("span");
+  position.className = "track-meta";
+  position.textContent = (index + 1) + ".";
+
+  const nameEl = document.createElement("span");
+  nameEl.className = "track-name";
+  nameEl.textContent = name;
+
+  const up = textButton("▲", "Feljebb");
+  up.disabled = index === 0;
+  up.addEventListener("click", () => guardMusic(() => movePlaylistTrack(playlist, index, index - 1)));
+
+  const down = textButton("▼", "Lejjebb");
+  down.disabled = index === count - 1;
+  down.addEventListener("click", () => guardMusic(() => movePlaylistTrack(playlist, index, index + 1)));
+
+  const remove = textButton("✕", "Eltávolítás a playlistből");
+  remove.addEventListener("click", () => guardMusic(() => removePlaylistTrack(playlist, name)));
+
+  row.addEventListener("dragstart", (e) => {
+    playlistDragIndex = index;
+    row.classList.add("dragging");
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      try {
+        e.dataTransfer.setData("text/plain", String(index)); // a Firefox csak setData utan indul el
+      } catch (err) {
+        // ha a bongeszo nem engedi, a huzas a playlistDragIndex-szel akkor is mukodik
+      }
+    }
+  });
+  row.addEventListener("dragover", (e) => {
+    if (playlistDragIndex === null) return; // nem a playlist sorai kozul huzott elem
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    row.classList.add("drag-over");
+  });
+  row.addEventListener("dragleave", () => row.classList.remove("drag-over"));
+  row.addEventListener("drop", (e) => {
+    if (playlistDragIndex === null) return;
+    e.preventDefault();
+    const from = playlistDragIndex;
+    clearPlaylistDrag();
+    if (from !== index) guardMusic(() => movePlaylistTrack(playlist, from, index));
+  });
+  row.addEventListener("dragend", clearPlaylistDrag);
+
+  row.append(handle, position, nameEl, up, down, remove);
+  return row;
+}
+
+// Sorrend valtoztatasa (gomb vagy huzas): a szerver a frissitett playlistet adja vissza
+async function movePlaylistTrack(playlist, fromIndex, toIndex) {
+  const result = await post(`/api/playlists/${encodeURIComponent(playlist.id)}/move`, { from_index: fromIndex, to_index: toIndex });
+  const error = playlistError(result);
+  if (error) {
+    loadPlaylists();
+    await showError(error);
+    return;
+  }
+  playlistsData = {
+    ...playlistsData,
+    playlists: playlistsData.playlists.map((p) => (p.id === result.playlist.id ? result.playlist : p)),
+  };
+  renderPlaylists();
+}
+
+async function removePlaylistTrack(playlist, name) {
+  const result = await api(`/api/playlists/${encodeURIComponent(playlist.id)}/tracks/${encodeURIComponent(name)}`, { method: "DELETE" });
+  const error = playlistError(result);
+  if (error) {
+    loadPlaylists();
+    await showError(error);
+    return;
+  }
+  await loadPlaylists();
+  await loadMusicList();
+}
+
+document.getElementById("playlistSelect").addEventListener("change", (e) => guardMusic(async () => {
+  const result = await post("/api/playlists/active", { id: e.target.value });
+  const error = playlistError(result);
+  if (error) {
+    loadPlaylists();
+    await showError(error);
+    return;
+  }
+  await loadPlaylists();
+}));
+
+document.getElementById("btnPlaylistNew").addEventListener("click", () => guardMusic(async () => {
+  const input = await modal.prompt("Playlist neve:", { title: "Új playlist", placeholder: "pl. Szünet" });
+  const name = input === null ? "" : input.trim();
+  if (!name) return;
+  const result = await post("/api/playlists", { name });
+  const error = playlistError(result);
+  if (error) {
+    await showError(error);
+    return;
+  }
+  const created = result.playlist.id;
+  await loadPlaylists();
+  if (playlistsData.active !== created) {
+    const set = await post("/api/playlists/active", { id: created });
+    const activeError = playlistError(set);
+    if (activeError) {
+      loadPlaylists();
+      await showError(activeError);
+      return;
+    }
+    await loadPlaylists();
+  }
+}));
+
+document.getElementById("btnPlaylistRename").addEventListener("click", () => guardMusic(async () => {
+  const playlist = shownPlaylist();
+  if (!playlist) return;
+  const input = await modal.prompt(`Új név a(z) „${playlist.name}” playlisthez:`, { title: "Playlist átnevezése", placeholder: playlist.name });
+  const name = input === null ? "" : input.trim();
+  if (!name || name === playlist.name) return;
+  const result = await api(`/api/playlists/${encodeURIComponent(playlist.id)}`, { method: "PUT", body: JSON.stringify({ name }) });
+  const error = playlistError(result);
+  if (error) {
+    await showError(error);
+    return;
+  }
+  await loadPlaylists();
+  await loadMusicList();
+}));
+
+document.getElementById("btnPlaylistDelete").addEventListener("click", () => guardMusic(async () => {
+  const playlist = shownPlaylist();
+  if (!playlist) return;
+  const count = Array.isArray(playlist.tracks) ? playlist.tracks.length : 0;
+  const ok = await modal.confirm(
+    `A(z) „${playlist.name}” playlist törlése? (${count} szám; a zenefájlok megmaradnak.)`,
+    { title: "Playlist törlése", okText: "Törlés", danger: true },
+  );
+  if (!ok) return;
+  const result = await api(`/api/playlists/${encodeURIComponent(playlist.id)}`, { method: "DELETE" });
+  const error = playlistError(result);
+  if (error) {
+    loadPlaylists();
+    await showError(error);
+    return;
+  }
+  await loadPlaylists();
+  await loadMusicList();
+}));
+
+document.getElementById("btnPlaylistPlay").addEventListener("click", () => guardMusic(async () => {
+  const playlist = shownPlaylist();
+  if (!playlist) return;
+  // ures playlistnel a szerver 400-at ad, a startMusic ezt mutatja
+  await startMusic("/api/music/play-playlist", { id: playlist.id }, playlist.name);
+}));
+
+document.getElementById("btnMusicAddToPlaylist").addEventListener("click", () => guardMusic(async () => {
+  const names = selectedTrackNames();
+  const id = document.getElementById("addToPlaylistSelect").value;
+  if (!names.length || !id) return;
+  const result = await post(`/api/playlists/${encodeURIComponent(id)}/tracks`, { names });
+  const error = playlistError(result);
+  if (error) {
+    loadPlaylists();
+    await showError(error);
+    return;
+  }
+  // a kijeloles megmarad, hogy tovabbi playlistekhez is hozza lehessen adni
+  await loadPlaylists();
+  await loadMusicList();
+}));
 
 // ---------- zene: allapot, sor, tekeres, loop ----------
 
@@ -2423,6 +2700,7 @@ async function init() {
     loadOutputState,
     loadUploadLimit,
     loadMusicList,
+    loadPlaylists,
     loadMusicStatus,
     refreshStorage,
     loadLogs,
