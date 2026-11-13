@@ -359,6 +359,19 @@ def test_loop_rejects_unknown_mode(env, body):
     assert env.ctx.music_session.loop_mode == "off"
 
 
+def test_library_play_inherits_the_session_loop_mode(env):
+    env.music_dir.mkdir(parents=True)
+    (env.music_dir / "a.mp3").write_bytes(b"x")
+    env.ctx.music_player = _ClampPlayer()
+    env.client.post("/api/music/loop", json={"mode": "track"})
+
+    resp = env.client.post("/api/music/play-file", json={"filenames": ["a.mp3"], "force": True})
+
+    assert resp.status_code == 202
+    assert env.ctx.music_session.current.loop_mode == "track"
+    assert env.client.get("/api/music/status").json()["loop"] == "track"
+
+
 def test_status_has_queue_next_position(env):
     _playing(env)
 

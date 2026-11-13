@@ -336,3 +336,223 @@ def test_session_set_loop_applies_to_downloading_service_without_touching_player
 
     assert svc.loop_mode == "track"
     assert player.loop is False
+
+
+# ---------- R13: az ismetles nem lepheti at a kovetkezo csengetest, kiveve force-nal ----------
+
+
+class FakeClock:
+    def __init__(self):
+        self.t = 1000.0
+
+    def __call__(self):
+        return self.t
+
+
+class TimedPlayer(FakePlayer):
+    """Mint a FakePlayer, de minden lejatszas a szam hosszaval leptet egy hamis orat."""
+
+    def __init__(self, clock, lengths, **kw):
+        super().__init__(**kw)
+        self.clock = clock
+        self.lengths = lengths
+
+    def play(self, path, blocking=False, force=False, on_done=None):
+        self.clock.t += self.lengths[os.path.basename(path)]
+        super().play(path, blocking, force, on_done)
+
+
+def _bounded(monkeypatch, files, lengths, seconds_left, loop, **kw):
+    """Nem force szolgaltatas hamis ora + hamis hosszakkal; seconds_left: get_break() ertek."""
+    clock = FakeClock()
+    player = TimedPlayer(clock, lengths, **kw)
+    monkeypatch.setattr(music_main, "track_duration", lambda p: lengths[os.path.basename(p)])
+    svc = MusicService([], player, None, force=False, files=files, clock=clock)
+    svc.get_break = lambda: seconds_left
+    svc.loop_mode = loop
+    return svc, player, clock
+
+
+def test_non_force_playlist_loop_stops_before_the_deadline(monkeypatch):
+    svc, player, clock = _bounded(
+        monkeypatch, ["/m/a.mp3", "/m/b.mp3"], {"a.mp3": 10.0, "b.mp3": 10.0}, 70, "playlist"
+    )
+
+    assert svc() is True
+
+    assert wait_until(lambda: svc.status == "done")
+    # 20 mp-es sor 70 mp-ig: 3 kor fer bele (60 mp), a negyedik mar atlepne a csengetest
+    assert player.played == ["a.mp3", "b.mp3"] * 3
+    assert clock.t - 1000.0 <= 70
+    assert svc.current is None and svc.index is None
+
+
+def test_non_force_playlist_loop_still_loops_while_time_remains(monkeypatch):
+    svc, player, clock = _bounded(
+        monkeypatch, ["/m/a.mp3", "/m/b.mp3"], {"a.mp3": 10.0, "b.mp3": 10.0}, 1000, "playlist"
+    )
+    player.hook = lambda n: svc.stop() if n == 9 else None
+
+    svc()
+
+    assert wait_until(lambda: svc.status == "stopped")
+    assert player.played == ["a.mp3", "b.mp3"] * 4 + ["a.mp3"]
+
+
+def test_non_force_track_loop_does_not_start_a_repeat_crossing_the_deadline(monkeypatch):
+    svc, player, clock = _bounded(monkeypatch, ["/m/a.mp3"], {"a.mp3": 10.0}, 35, "track")
+
+    svc()
+
+    assert wait_until(lambda: svc.status == "done")
+    # 0-10, 10-20, 20-30 jo; a negyedik 30-40 atlepne a 35 mp-es hatart
+    assert player.played == ["a.mp3"] * 3
+    assert clock.t - 1000.0 <= 35
+    # a hataros szamismetles nem a mixer hatar nelkuli (gapless) jelzojet hasznalja
+    assert player.loop_at_play == [False, False, False]
+    assert player.loop is False
+
+
+def test_non_force_track_loop_repeats_only_the_current_track(monkeypatch):
+    svc, player, clock = _bounded(
+        monkeypatch, ["/m/a.mp3", "/m/b.mp3"], {"a.mp3": 10.0, "b.mp3": 10.0}, 45, "track"
+    )
+
+    svc()
+
+    assert wait_until(lambda: svc.status == "done")
+    # az elso szam ismetlodik (0-10 ... 30-40), amig belefer a 45 mp-be; a sor tobbi eleme nem kerul sorra
+    assert player.played == ["a.mp3"] * 4
+
+
+def test_non_force_track_loop_turned_off_mid_play_advances(monkeypatch):
+    svc, player, clock = _bounded(
+        monkeypatch, ["/m/a.mp3", "/m/b.mp3"], {"a.mp3": 10.0, "b.mp3": 10.0}, 1000, "track"
+    )
+    player.hook = lambda n: setattr(svc, "loop_mode", "off") if n == 2 else None
+
+    svc()
+
+    assert wait_until(lambda: svc.status == "done")
+    assert player.played == ["a.mp3", "a.mp3", "b.mp3"]
+
+
+def test_non_force_track_loop_does_not_repeat_a_failing_track(monkeypatch):
+    svc, player, clock = _bounded(monkeypatch, ["/m/a.mp3"], {"a.mp3": 1.0}, 1000, "track", fail={"a.mp3"})
+
+    svc()
+
+    assert wait_until(lambda: svc.status == "error")
+    assert player.played == ["a.mp3"]
+    assert svc.error == "boom"
+
+
+def test_non_force_repeat_with_unreadable_length_ends_done(monkeypatch):
+    clock = FakeClock()
+    player = TimedPlayer(clock, {"a.mp3": 10.0})
+    monkeypatch.setattr(music_main, "track_duration", lambda p: None)
+    svc = MusicService([], player, None, force=False, files=["/m/a.mp3"], clock=clock)
+    svc.loop_mode = "playlist"
+    svc._deadline = clock() + 1000
+
+    svc._start_music()
+
+    assert wait_until(lambda: svc.status == "done")
+    assert player.played == ["a.mp3"]
+
+
+def test_force_service_loops_until_stopped_regardless_of_the_deadline(monkeypatch):
+    clock = FakeClock()
+    lengths = {"a.mp3": 100.0, "b.mp3": 100.0}
+    player = TimedPlayer(clock, lengths)
+    monkeypatch.setattr(music_main, "track_duration", lambda p: lengths[os.path.basename(p)])
+    svc = MusicService([], player, None, force=True, files=["/m/a.mp3", "/m/b.mp3"], clock=clock)
+
+    def no_break():
+        raise AssertionError("a force szolgaltatas nem nezi a csengetesi rendet")
+
+    svc.get_break = no_break
+    svc.loop_mode = "playlist"
+    player.hook = lambda n: svc.stop() if n == 7 else None
+
+    svc()
+
+    assert wait_until(lambda: svc.status == "stopped")
+    assert player.played == ["a.mp3", "b.mp3"] * 3 + ["a.mp3"]
+
+
+def test_force_track_loop_uses_the_gapless_player_flag(monkeypatch):
+    svc, player, clock = _bounded(monkeypatch, ["/m/a.mp3"], {"a.mp3": 10.0}, 5, "track")
+    svc.force = True
+
+    svc()
+
+    assert wait_until(lambda: svc.status == "done")
+    assert player.played == ["a.mp3"]
+    assert player.loop_at_play == [True]
+
+
+def test_no_deadline_loops_like_force(monkeypatch):
+    svc, player, clock = _bounded(
+        monkeypatch, ["/m/a.mp3", "/m/b.mp3"], {"a.mp3": 600.0, "b.mp3": 600.0}, None, "playlist"
+    )
+    player.hook = lambda n: svc.stop() if n == 7 else None
+
+    assert svc() is True
+
+    assert wait_until(lambda: svc.status == "stopped")
+    assert player.played == ["a.mp3", "b.mp3"] * 3 + ["a.mp3"]
+
+
+def test_no_deadline_track_loop_uses_the_gapless_player_flag(monkeypatch):
+    svc, player, clock = _bounded(monkeypatch, ["/m/a.mp3"], {"a.mp3": 10.0}, None, "track")
+
+    svc()
+
+    assert wait_until(lambda: svc.status == "done")
+    assert player.loop_at_play == [True]
+
+
+def test_set_loop_on_a_bounded_service_never_enables_the_gapless_flag(monkeypatch):
+    svc, player, clock = _bounded(monkeypatch, ["/m/a.mp3"], {"a.mp3": 10.0}, 100, "off")
+    svc._deadline = clock() + 100
+    svc.status = "playing"
+
+    svc.set_loop("track")
+
+    assert svc.loop_mode == "track"
+    assert player.loop is False
+
+
+def test_set_loop_on_an_unbounded_playing_service_enables_the_gapless_flag():
+    player = FakePlayer()
+    svc = _svc(["/m/a.mp3"], player)  # force=True: nincs hatar
+    svc.status = "playing"
+
+    svc.set_loop("track")
+
+    assert player.loop is True
+
+
+def test_non_force_service_that_does_not_fit_is_skipped(monkeypatch):
+    svc, player, clock = _bounded(
+        monkeypatch, ["/m/a.mp3", "/m/b.mp3"], {"a.mp3": 10.0, "b.mp3": 10.0}, 15, "playlist"
+    )
+
+    assert svc() is False
+    assert player.played == []
+
+
+def test_session_start_without_inheriting_the_loop_mode():
+    session = MusicSession()
+    session.set_loop("playlist")
+    player = FakePlayer()
+    svc = _svc(["/m/a.mp3"], player)
+
+    assert session.start(svc, inherit_loop=False) is True
+
+    assert svc.loop_mode == "off"
+    assert wait_until(lambda: svc.status == "done")
+    assert player.played == ["a.mp3"]
+    assert player.loop_at_play == [False]
+    assert session.loop_mode == "playlist"  # a munkamenet beallitasa megmarad

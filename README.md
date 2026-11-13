@@ -8,7 +8,7 @@ Iskolai csengetési rendszer asztali alkalmazásként: időzített csengetés, z
 - **Pontos idő**: NTP-s vagy rendszeridő (`time_mode`).
 - **Hangkeverő**: a csengő, a zene, a mikrofon és a hálózati mikrofongépek egy közös kimenetre keverednek; a force-os csengő elsőbbséget kap.
 - **Hálózati mikrofonok**: más gépek mikrofonja WebSocketen, tokenes azonosítással és automatikus token-rotációval kerül a keverőbe, gépenként külön sávval és hangerővel.
-- **Zene**: médiafájlok feltöltése és letöltés (yt-dlp). A Zenék panelben számokat lehet kijelölni és törölni, playlistekbe rendezni (húzással), tekerni, illetve egy számot vagy a teljes playlistet ismételni.
+- **Zene**: médiafájlok feltöltése és letöltés (yt-dlp). A Zenék panelben számokat lehet kijelölni és törölni, playlistekbe rendezni (húzással), tekerni, illetve egy számot vagy a teljes playlistet ismételni. Az „Akkor is induljon” kapcsoló nélkül indított zene ismétlése a következő csengetés előtt megáll (nem indul újabb kör, ami átérne rajta), a kényszerített zene a leállításig ismétlődik.
 - **Hálózati eszközök**: ESP32 hangszórók a WebSocket hang-streamen kapják a hangot, token- és IP-alapú hitelesítéssel; az eszközök UDP-n jelentkezhetnek, az admin hagyja jóvá őket.
 
 ## Követelmények

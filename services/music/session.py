@@ -20,14 +20,18 @@ class MusicSession:
     def current(self) -> MusicService | None:
         return self._current
 
-    def start(self, service: MusicService) -> bool:
-        """Hatterszalon elinditja; False, ha mar fut egy zene."""
+    def start(self, service: MusicService, inherit_loop: bool = True) -> bool:
+        """Hatterszalon elinditja; False, ha mar fut egy zene.
+
+        inherit_loop=False: a szolgaltatas ismetlese kikapcsolva indul (a munkamenet modja marad).
+        """
         with self._lock:
             current = self._current
             if current is not None and current.status in ("downloading", "playing"):
                 return False
             self._current = service
-            service.loop_mode = self.loop_mode
+            if inherit_loop:
+                service.loop_mode = self.loop_mode
         threading.Thread(target=service.run, daemon=True).start()
         return True
 

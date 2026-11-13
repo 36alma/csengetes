@@ -192,14 +192,17 @@ def create_router(ctx: ApiContext) -> APIRouter:
         path = _music_path(body.get("name"))
         if path is None:
             return error("A zene nem talalhato.", 404)
-        # ugyanaz a zenei allapot, mint a zene fulon: ott is latszik, hogy mi szol
+        # ugyanaz a zenei allapot, mint a zene fulon: ott is latszik, hogy mi szol; de ezen a fulon
+        # nincs ismetlesjelzo, ezert a zene fulon beallitott ismetles nem ervenyes ide (inherit_loop)
         started = ctx.music_session.start(
-            MusicService(None, ctx.music_player, ctx.time_src, force=True, now_play=True, files=[path])
+            MusicService(None, ctx.music_player, ctx.time_src, force=True, now_play=True, files=[path]),
+            inherit_loop=False,
         )
         if not started:
             ctx.music_session.stop(ctx.music_player)
             ctx.music_session.start(
-                MusicService(None, ctx.music_player, ctx.time_src, force=True, now_play=True, files=[path])
+                MusicService(None, ctx.music_player, ctx.time_src, force=True, now_play=True, files=[path]),
+                inherit_loop=False,
             )
         return {"ok": True}
 

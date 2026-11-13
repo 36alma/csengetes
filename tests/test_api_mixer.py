@@ -35,7 +35,8 @@ def env(tmp_path, monkeypatch):
                           ws_authorized=lambda ws: state["authorized"], save_config=save_config)
     app = FastAPI()
     app.include_router(api_mixer.create_router(ctx))
-    yield SimpleNamespace(client=TestClient(app), mixer=mixer, state=state, music_dir=tmp_path)
+    yield SimpleNamespace(client=TestClient(app), mixer=mixer, state=state, music_dir=tmp_path,
+                          session=ctx.music_session, player=music_player)
     mixer.stop()
 
 
@@ -120,6 +121,33 @@ def test_music_path_protection_and_playback(env):
     assert wait_until(lambda: "PLAYING_MUSIC" in env.client.get("/api/mixer").json()["flags"])
     assert env.client.delete("/api/mixer/music").status_code == 200
     assert wait_until(lambda: not env.mixer.file_playing)
+
+
+def test_mixer_tab_play_does_not_inherit_the_session_loop_mode(env):
+    # a zene fulon (vagy napokkal ezelott) beallitott ismetles nem erintheti a mixer ful egyetlen fajljat
+    sf.write(env.music_dir / "rovid.wav", 0.2 * np.sin(np.linspace(0, 100, SAMPLE_RATE // 5)), SAMPLE_RATE)
+    env.session.set_loop("track")
+
+    assert env.client.post("/api/mixer/music", json={"name": "rovid.wav"}).status_code == 200
+
+    svc = env.session.current
+    assert svc.loop_mode == "off"
+    assert env.player._loop is False
+    assert wait_until(lambda: svc.status == "done")  # nem ismetlodik a vegtelensegig
+    assert env.session.loop_mode == "track"  # a munkamenet beallitasa megmarad
+
+
+def test_mixer_tab_replay_after_busy_also_starts_without_loop(env):
+    sf.write(env.music_dir / "dal.wav", 0.2 * np.sin(np.linspace(0, 500, SAMPLE_RATE * 3)), SAMPLE_RATE)
+    assert env.client.post("/api/mixer/music", json={"name": "dal.wav"}).status_code == 200
+    env.session.set_loop("playlist")  # a futo zenere azonnal ervenyes (R9)
+    assert env.session.current.loop_mode == "playlist"
+
+    assert env.client.post("/api/mixer/music", json={"name": "dal.wav"}).status_code == 200  # leallit + ujrainditas
+
+    assert env.session.current.loop_mode == "off"
+    assert env.player._loop is False
+    env.client.delete("/api/mixer/music")
 
 
 def test_websocket_streams_numbered_packets(env):

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Optional
+import time
+from typing import Callable, Optional
 
 import config_store
 from services.mixer import MixerPlayer
@@ -22,8 +23,12 @@ LOOP_MODES = ("off", "track", "playlist")
 class MusicService:
     """Letolti a zenet, majd ha belefer a kovetkezo csengetesig, lejatssza.
 
-    force=True: akkor is elindul, ha nem fer bele a szunetbe.
+    force=True: akkor is elindul, ha nem fer bele a szunetbe, es az ismetles (loop_mode) a
+    leallitasig tart. force=False: az ismetles sem indit ujabb kort, ami athuzodna a kovetkezo
+    csengetesen (hataridopont: az indulaskor szamolt csengetesi ido; ha nincs tobb esemeny,
+    nincs hatar).
     now_play=True: az elso szam megszakitja a most szolo hangot.
+    clock: egyre novo idoforras masodpercben (tesztben cserelheto).
     """
 
     def __init__(
@@ -34,6 +39,7 @@ class MusicService:
         force: bool = False,
         now_play: bool = False,
         files: list[str] | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.url = url or []
         self.player = player
@@ -47,6 +53,8 @@ class MusicService:
         self.progress: dict | None = None  # letoltes alatt: {percent, title, item}
         self.index: int | None = None  # a most szolo szam indexe a filename-ben
         self.loop_mode: str = "off"  # off|track|playlist
+        self._clock = clock
+        self._deadline: float | None = None
         self._cancel = threading.Event()
 
     def stop(self) -> None:
@@ -62,7 +70,7 @@ class MusicService:
             raise ValueError(f"Ismeretlen ismetlesi mod: {mode}")
         self.loop_mode = mode
         if self.status == "playing":
-            self.player.set_loop(mode == "track")
+            self.player.set_loop(self._gapless_loop())
 
     def seek(self, seconds: float) -> float | None:
         """Tekeres a most szolo szamon belul; az uj pozicio, None ha nem szol zene."""
@@ -127,14 +135,18 @@ class MusicService:
         """True, ha a lejatszas elindult."""
         if not self.filename:
             self.prepare()
+        self._deadline = None
         if not self.force:
             seconds_left = self.get_break()
             total = self.get_music_length()
-        if not self.force and seconds_left is not None and total > seconds_left:
-            logger.info(
-                "Zene nem fer bele a szunetbe (%.0f mp > %d mp), kihagyva.", total, seconds_left
-            )
-            return False
+            if seconds_left is not None:
+                if total > seconds_left:
+                    logger.info(
+                        "Zene nem fer bele a szunetbe (%.0f mp > %d mp), kihagyva.", total, seconds_left
+                    )
+                    return False
+                # az ismetlesek is ezen a hataron belul maradnak
+                self._deadline = self._clock() + seconds_left
         self._start_music()
         return True
 
@@ -152,6 +164,23 @@ class MusicService:
             default=None,
         )
 
+    def _gapless_loop(self) -> bool:
+        """A mixer hatar nelkuli (gapless) szamismetlese: csak ott, ahol nincs hatarido."""
+        return self.loop_mode == "track" and self._deadline is None
+
+    def _repeat_fits(self, paths: list[str]) -> bool:
+        """Befer-e meg a hataridoig az, amit ismetelni kezdenenk (nincs hatarido: mindig)."""
+        deadline = self._deadline
+        if deadline is None:
+            return True
+        total = 0.0
+        for path in paths:
+            duration = track_duration(path)
+            if duration is None:
+                return False
+            total += duration
+        return deadline - self._clock() >= total
+
     def _start_music(self) -> None:
         """Egymas utan jatssza le a szamokat egy hatterszalon."""
 
@@ -160,7 +189,7 @@ class MusicService:
             while self.filename and not self._cancel.is_set():
                 path = self.filename[index]
                 self.index, self.current = index, path
-                self.player.set_loop(self.loop_mode == "track")
+                self.player.set_loop(self._gapless_loop())
                 result: dict = {}
                 self.player.play(path, blocking=True, force=self.now_play if first else False,
                                  on_done=lambda err, r=result: r.update(err=err))
@@ -174,9 +203,14 @@ class MusicService:
                     self.error = result["err"]; self.current = None; self.index = None
                     self.player.set_loop(False); self.status = "error"
                     return
+                if self.loop_mode == "track" and self._deadline is not None and not result.get("err"):
+                    # hataridos szamismetles: ugyanaz a szam ujra, ha meg belefer
+                    if self._repeat_fits([path]):
+                        continue
+                    break
                 index += 1
                 if index >= len(self.filename):
-                    if self.loop_mode != "playlist":
+                    if self.loop_mode != "playlist" or not self._repeat_fits(self.filename):
                         break
                     index = 0
             self.current = None; self.index = None
