@@ -1637,7 +1637,7 @@ function buildTrackRow(item) {
   });
 
   const del = iconButton("track-delete btn-danger", "i-trash", "Törlés: " + item.name);
-  del.addEventListener("click", () => deleteMusicNames([item.name]));
+  del.addEventListener("click", () => guardMusic(() => confirmAndDeleteTracks([item.name])));
 
   row.append(check, nameEl, time, size, play, del);
   musicRowRefs.set(item.name, { row, nameEl, check });
@@ -1759,11 +1759,38 @@ async function guardMusic(task) {
   }
 }
 
-// Ideiglenes torles (F2 cserelje a Zenék-kezelo felulettel): megerosites, DELETE, lista es tarhely frissitese
-async function deleteMusicNames(names) {
+// Torlesi megerosito szoveg: legfeljebb 5 nev soronkent, a tobbi "+N tovabbi" sorban;
+// a szolo szam es a playlistben levo szamok toldalekot kapnak; ha a szolo szam a torlendok kozott van, a vegen jelzi a leallast
+function buildDeleteMessage(names, items, playingName) {
+  const playlistsByName = new Map();
+  for (const item of items || []) {
+    if (item && Array.isArray(item.playlists) && item.playlists.length) playlistsByName.set(item.name, item.playlists);
+  }
+  const lines = names.slice(0, 5).map((name) => {
+    let line = name;
+    if (name === playingName) line += " (éppen szól)";
+    if (playlistsByName.has(name)) line += ` (playlistben: ${playlistsByName.get(name).join(", ")})`;
+    return line;
+  });
+  if (names.length > 5) lines.push(`+${names.length - 5} további`);
+  if (playingName && names.includes(playingName)) lines.push("A lejátszás leáll.");
+  return lines.join("\n");
+}
+
+// Torles megerositessel: a szolo szamot eloszor leallitja, fajlonkent DELETE, majd frissit; a hibakat egy osszegzo ablakban mutatja
+async function confirmAndDeleteTracks(names) {
   if (!names.length) return;
-  const ok = await modal.confirm(names.join("\n"), { title: "Zenék törlése", okText: "Törlés", danger: true });
+  const message = buildDeleteMessage(names, musicItems, currentMusic);
+  const ok = await modal.confirm(message, { title: "Zenék törlése", okText: "Törlés", danger: true });
   if (!ok) return;
+  if (currentMusic && names.includes(currentMusic)) {
+    try {
+      await post("/api/music/stop");
+    } catch (e) {
+      // ha nem sikerult a leallitas, a DELETE 409-cel jelzi a hibat
+    }
+    loadMusicStatus();
+  }
   const failed = [];
   for (const name of names) {
     let result = null;
@@ -1778,9 +1805,11 @@ async function deleteMusicNames(names) {
       failed.push(`${name}: ${(result && result.error) || "a törlés nem sikerült"}`);
     }
   }
-  for (const message of failed) await showError(message);
+  // elobb frissul a lista es a tarhely, csak utana jon a hibaablak (hogy ne maradjon elavult a lista)
   await loadMusicList();
-  refreshStorage();
+  await refreshStorage();
+  if (typeof loadPlaylists === "function") loadPlaylists();
+  if (failed.length) await showError(`${failed.length}/${names.length} törlése nem sikerült:\n` + failed.join("\n"));
 }
 
 // Egy fajl feltoltese; hiba eseten a hibauzenettel ter vissza, sikernel null-lal
@@ -1819,7 +1848,7 @@ document.getElementById("btnMusicStop").addEventListener("click", async () => {
   loadMusicStatus();
 });
 
-document.getElementById("btnMusicDeleteSelected").addEventListener("click", () => deleteMusicNames(selectedTrackNames()));
+document.getElementById("btnMusicDeleteSelected").addEventListener("click", () => guardMusic(() => confirmAndDeleteTracks(selectedTrackNames())));
 
 document.getElementById("musicSelectAll").addEventListener("change", (e) => {
   musicSelection = e.target.checked ? new Set(musicItems.map((item) => item.name)) : new Set();
