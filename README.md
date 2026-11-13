@@ -8,7 +8,7 @@ Iskolai csengetési rendszer asztali alkalmazásként: időzített csengetés, z
 - **Pontos idő**: NTP-s vagy rendszeridő (`time_mode`).
 - **Hangkeverő**: a csengő, a zene, a mikrofon és a hálózati mikrofongépek egy közös kimenetre keverednek; a force-os csengő elsőbbséget kap.
 - **Hálózati mikrofonok**: más gépek mikrofonja WebSocketen, tokenes azonosítással és automatikus token-rotációval kerül a keverőbe, gépenként külön sávval és hangerővel.
-- **Zene**: médiafájlok feltöltése és letöltés (yt-dlp).
+- **Zene**: médiafájlok feltöltése és letöltés (yt-dlp). A Zenék panelben számokat lehet kijelölni és törölni, playlistekbe rendezni (húzással), tekerni, illetve egy számot vagy a teljes playlistet ismételni.
 - **Hálózati eszközök**: ESP32 hangszórók a WebSocket hang-streamen kapják a hangot, token- és IP-alapú hitelesítéssel; az eszközök UDP-n jelentkezhetnek, az admin hagyja jóvá őket.
 
 ## Követelmények
@@ -47,6 +47,23 @@ A `config_example.json` alapján. A fontosabb kulcsok:
 | `enroll_port` | az UDP jelentkezési port (8767) |
 
 A `config.json`, a `devices.json`, a `remote_mics.json`, a `media/` és a `schedules/` nincs verziókezelve.
+
+### Tárhely- és méretkorlátok (környezeti változók)
+
+A korlátok környezeti változóval írhatók felül. A változókat a szerver indításakor kell beállítani (újraindítás után érvényesek); érvénytelen vagy nem pozitív érték esetén az alapérték marad.
+
+| Változó | Alapérték | Jelentés |
+| --- | --- | --- |
+| `CSENGETES_MAX_STORAGE_MB` | 5120 | összes tárhely a médiamappákra (csengőhangok + zenék); ennyi után a feltöltés és a letöltés nem indul |
+| `CSENGETES_MAX_UPLOAD_MB` | a `config.json` `max_upload_mb` értéke (ma 20) | egy feltöltött fájl maximális mérete |
+| `CSENGETES_MAX_DOWNLOAD_MB` | 100 | egy YouTube-ról letöltött fájl maximális mérete |
+| `CSENGETES_MAX_YT_MINUTES` | 15 | ennél hosszabb YouTube-videó vagy élő adás elutasítva |
+
+Példa (PowerShell), 2 MB-os tárhellyel indítva a szervert:
+
+```powershell
+$env:CSENGETES_MAX_STORAGE_MB="2"; python server.py
+```
 
 ## Hálózati mikrofonok
 
