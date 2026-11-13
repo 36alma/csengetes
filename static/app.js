@@ -1835,14 +1835,16 @@ function tickMusicProgress() {
   const timeEl = document.getElementById("musicTime");
   const st = musicProgressState;
   const duration = st ? st.duration_s : null;
+  // huzas kozben sem a csuszka, sem a felirat nem frissul: a huzas aktualis erteke marad
+  if (seekDragging) return;
   if (!st || !st.playing || !hasDuration(duration)) {
     timeEl.textContent = "–:–– / –:––";
-    if (!seekDragging) slider.value = 0;
+    slider.value = 0;
     return;
   }
   const base = Number.isFinite(st.position_s) ? st.position_s : 0;
   const pos = Math.min(duration, base + Math.max(0, nowMs() - st.at) / 1000);
-  if (!seekDragging) slider.value = Math.round(pos / duration * 1000);
+  slider.value = Math.round(pos / duration * 1000);
   timeEl.textContent = formatTime(pos) + " / " + formatTime(duration);
 }
 
