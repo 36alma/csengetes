@@ -926,6 +926,20 @@ button, input, select, textarea { font: inherit; color: inherit; }
   pointer-events: none;
 }
 .music-download { flex-shrink: 0; }
+/* Most szol, sor, tekeres, loop es letoltesi folyamat */
+.music-now { flex-shrink: 0; }
+.now-info { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.now-line { overflow-wrap: anywhere; }
+.seek-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.seek-slider { flex: 1 1 160px; min-width: 0; accent-color: var(--accent); }
+.seek-row .num { white-space: nowrap; }
+.btn.is-active { border-color: var(--accent); background: var(--accent-weak); color: var(--text); }
+.download-box { display: flex; flex-direction: column; gap: var(--space-1); }
+.download-track { position: relative; height: 6px; overflow: hidden; border-radius: 3px; background: var(--surface-hover); }
+.download-fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: inherit; background: var(--accent); transition: width 0.3s ease; }
+.queue-list { max-height: 160px; margin: 0; padding: 0 0 0 var(--space-5); overflow-y: auto; color: var(--text-muted); }
+.queue-list li { padding: var(--space-1) 0; overflow-wrap: anywhere; }
+.queue-list li.now-playing { color: var(--ok); font-weight: 600; }
 .switch-group { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); }
 .panel-footer .field.grow,
 .field.grow { flex: 1; }
@@ -937,6 +951,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 @media (max-width: 700px) {
   /* keskeny sorban a nev a jelolonegyzet mellett kap helyet, a adatok es gombok a kovetkezo sorba toernek */
   .track-name { flex-basis: calc(100% - 32px); }
+  /* keskeny sorban a tekero a sor elejere kerul, a gombok es az ido alatta sorakoznak */
+  .seek-slider { order: -1; flex-basis: 100%; }
 }
 
 /* ---------- Beallitasok ---------- */

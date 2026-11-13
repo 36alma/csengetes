@@ -103,7 +103,7 @@ const sandbox = {
   document,
   fetch,
   console: { log() {}, warn() {}, error(...args) { loaderErrors.push(args.map(String).join(" ")); } },
-  window: { location: { search: "", pathname: "/" }, history: { replaceState() {} } },
+  window: { location: { search: "", pathname: "/" }, history: { replaceState() {} }, addEventListener() {} },
   URLSearchParams,
   // az idozitett lekerdezesek ne fussanak vegtelen ciklusban
   setTimeout: () => 0,

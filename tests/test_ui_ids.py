@@ -18,6 +18,9 @@ MUSIC_IDS = {
     "musicEmpty", "musicList", "musicSelectAll", "musicSelectedCount",
     "btnMusicPlaySelected", "btnMusicDeleteSelected",
     "btnMusicPlay", "btnMusicStop", "musicStatus", "musicUrl", "musicForce", "musicNowPlay", "btnMusicRefresh",
+    # lejatszas-allapot, tekeres, loop, letoltesi folyamat (Task 14, F3)
+    "nowTitle", "nowNext", "queueList", "musicSeek", "musicTime", "btnSeekBack", "btnSeekFwd", "btnMusicLoop",
+    "musicDownloadBox", "musicDownloadBar", "musicDownloadText", "musicErrorMsg",
 }
 
 

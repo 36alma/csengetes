@@ -359,6 +359,25 @@
               <button class="btn btn-icon" id="btnMusicRefresh" title="Lista frissítése" aria-label="Zenék frissítése"><svg class="icon"><use href="#i-refresh"/></svg></button>
             </div>
           </header>
+          <div class="panel-body music-now">
+            <div class="now-info">
+              <div class="now-line"><span class="muted">Most szól:</span> <strong id="nowTitle">Nem szól semmi</strong></div>
+              <div class="now-line"><span class="muted">Következő:</span> <span id="nowNext">–</span></div>
+            </div>
+            <div class="seek-row">
+              <button class="btn btn-sm" id="btnSeekBack" disabled>−10 mp</button>
+              <input class="seek-slider" type="range" id="musicSeek" min="0" max="1000" value="0" disabled aria-label="Tekerés">
+              <button class="btn btn-sm" id="btnSeekFwd" disabled>+10 mp</button>
+              <span class="muted num" id="musicTime">–:–– / –:––</span>
+              <button class="btn btn-sm" id="btnMusicLoop" aria-pressed="false">Ismétlés: ki</button>
+            </div>
+            <div class="download-box" id="musicDownloadBox" hidden>
+              <div class="download-track"><div class="download-fill" id="musicDownloadBar"></div></div>
+              <span class="muted" id="musicDownloadText"></span>
+            </div>
+            <p class="list-error" id="musicErrorMsg" role="alert" hidden></p>
+            <ol class="queue-list" id="queueList" aria-label="Lejátszási sor" hidden></ol>
+          </div>
           <div class="panel-body music-download">
             <div class="field">
               <label class="field-label" for="musicUrl">YouTube-link</label>

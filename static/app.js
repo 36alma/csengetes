@@ -1717,32 +1717,165 @@ async function refreshStorage() {
   bar.classList.toggle("is-full", ratio >= 1);
 }
 
-async function loadMusicStatus() {
-  const data = await get("/api/music/status");
-  if (!data) return;
+// ---------- zene: allapot, sor, tekeres, loop ----------
+
+const MUSIC_LOOP_MODES = ["off", "track", "playlist"];
+const MUSIC_LOOP_LABEL = { off: "Ismétlés: ki", track: "Ismétlés: szám", playlist: "Ismétlés: playlist" };
+const MUSIC_LOOP_NEXT = { off: "track", track: "playlist", playlist: "off" };
+const MUSIC_END_STATES = ["done", "stopped", "error", "idle"]; // ezekre valtva a lejatszas veget jelzi
+let musicProgressState = null;  // {position_s, duration_s, at, playing}: a legutobbi poll alapjan, a tekeres interpolalasahoz
+let seekDragging = false;       // a felhasznalo eppen huzza a csuszkat: a lepteto nem nyulhat hozza
+let currentLoopMode = "off";
+let queueKey = null;            // az utoljara kirajzolt sor (queue + index), hogy ne epuljon ujra feleslegesen
+
+// performance.now() ha van, kulonben Date.now() (a teszt-vm-ben nincs performance)
+function nowMs() {
+  return typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+}
+
+function hasDuration(duration) {
+  return Number.isFinite(duration) && duration > 0;
+}
+
+// A lejatszasi sor; az index-edik elem kiemelve, ures sornal a lista rejtve
+function renderQueue(queue, index) {
+  const names = Array.isArray(queue) ? queue : [];
+  const current = Number.isInteger(index) && index >= 0 && index < names.length ? index : null;
+  const key = JSON.stringify([names, current]);
+  if (key === queueKey) return;
+  queueKey = key;
+  const rows = names.map((name, i) => {
+    const li = document.createElement("li");
+    li.textContent = String(name);
+    li.classList.toggle("now-playing", i === current);
+    return li;
+  });
+  const list = document.getElementById("queueList");
+  list.replaceChildren(...rows);
+  list.hidden = rows.length === 0;
+}
+
+// Letoltesi folyamat: csak "downloading" alatt, az egesz szazalek, a cim es a sorszam toldalekkal
+function renderDownload(data) {
+  const progress = data.progress;
+  const show = data.status === "downloading" && progress !== null && typeof progress === "object";
+  document.getElementById("musicDownloadBox").hidden = !show;
+  if (!show) return;
+  const percent = progress.percent;
+  const hasPercent = typeof percent === "number" && Number.isFinite(percent);
+  const width = hasPercent ? Math.min(100, Math.max(0, percent)) : 0;
+  let text = hasPercent ? "Letöltés: " + Math.round(width) + "%" : "Letöltés…";
+  if (typeof progress.title === "string" && progress.title) text += " – " + progress.title;
+  if (Number.isInteger(progress.item) && progress.item > 1) text += " (" + progress.item + ". szám)";
+  document.getElementById("musicDownloadText").textContent = text;
+  document.getElementById("musicDownloadBar").style.width = width + "%";
+}
+
+// A GET /api/music/status valaszanak kirajzolasa (a poll 1 mp-enkent hivja)
+function renderMusicStatus(data) {
+  const playing = data.status === "playing";
+  currentMusic = playing ? data.current || null : null;
+
   let text = MUSIC_STATUS_TEXT[data.status] || data.status;
   if (data.error) text += ": " + data.error;
-  currentMusic = data.status === "playing" ? data.current : null;
   if (currentMusic) text += " – " + currentMusic;
-  markCurrentMusic();
-  setStatus("musicStatus", data.status === "playing" ? "ok" : data.status === "error" ? "warn" : "off", text);
+  setStatus("musicStatus", playing ? "ok" : data.status === "error" ? "warn" : "off", text);
   document.getElementById("musicStatus").title = text;
+  markCurrentMusic();
+
+  document.getElementById("nowTitle").textContent = data.current || "Nem szól semmi";
+  document.getElementById("nowNext").textContent = data.next || "–";
+  renderQueue(data.queue, data.index);
+  renderDownload(data);
+
+  const hasError = data.status === "error";
+  const errorEl = document.getElementById("musicErrorMsg");
+  errorEl.textContent = hasError ? String(data.error || "Ismeretlen hiba történt.") : "";
+  errorEl.hidden = !hasError;
+
   document.getElementById("btnMusicStop").disabled = !MUSIC_BUSY.includes(data.status);
-  // letoltes utan frissitjuk a listat es a tarhelyet
-  if (lastMusicStatus === "downloading" && data.status !== "downloading") {
+  for (const id of ["musicSeek", "btnSeekBack", "btnSeekFwd"]) {
+    document.getElementById(id).disabled = !playing;
+  }
+
+  currentLoopMode = MUSIC_LOOP_MODES.includes(data.loop) ? data.loop : "off";
+  const loopBtn = document.getElementById("btnMusicLoop");
+  const loopOn = currentLoopMode !== "off";
+  loopBtn.textContent = MUSIC_LOOP_LABEL[currentLoopMode];
+  loopBtn.classList.toggle("is-active", loopOn);
+  loopBtn.setAttribute("aria-pressed", String(loopOn));
+
+  musicProgressState = { position_s: data.position_s, duration_s: data.duration_s, at: nowMs(), playing };
+  tickMusicProgress();
+
+  // letoltes vege, vagy a lejatszas vege: frissul a lista es a tarhely
+  const downloadEnded = lastMusicStatus === "downloading" && data.status !== "downloading";
+  const playbackEnded = lastMusicStatus === "playing" && MUSIC_END_STATES.includes(data.status);
+  if (downloadEnded || playbackEnded) {
     loadMusicList();
     refreshStorage();
   }
   lastMusicStatus = data.status;
 }
 
+async function loadMusicStatus() {
+  let data = null;
+  try {
+    data = await get("/api/music/status");
+  } catch (e) {
+    return; // halozati hiba: a kovetkezo poll ujra probalja
+  }
+  if (!data) return;
+  renderMusicStatus(data);
+}
+
+// Tekeres-kijelzo: a poll-valaszbol interpolal (250 ms-onkent); huzas kozben a csuszkat nem bantja
+function tickMusicProgress() {
+  const slider = document.getElementById("musicSeek");
+  const timeEl = document.getElementById("musicTime");
+  const st = musicProgressState;
+  const duration = st ? st.duration_s : null;
+  if (!st || !st.playing || !hasDuration(duration)) {
+    timeEl.textContent = "–:–– / –:––";
+    if (!seekDragging) slider.value = 0;
+    return;
+  }
+  const base = Number.isFinite(st.position_s) ? st.position_s : 0;
+  const pos = Math.min(duration, base + Math.max(0, nowMs() - st.at) / 1000);
+  if (!seekDragging) slider.value = Math.round(pos / duration * 1000);
+  timeEl.textContent = formatTime(pos) + " / " + formatTime(duration);
+}
+
+// Tekeres kerese a szervernek; siker vagy hiba utan a valos allapot szerint frissul, hibauzenet nincs
+async function seekMusic(body) {
+  let result = null;
+  try {
+    result = await post("/api/music/seek", body);
+  } catch (e) {
+    result = null;
+  }
+  if (result && result.ok && Number.isFinite(result.position_s) && musicProgressState) {
+    musicProgressState = { ...musicProgressState, position_s: result.position_s, at: nowMs() };
+  }
+  loadMusicStatus();
+}
+
 async function startMusic(path, body, label) {
-  const result = await post(path, {
-    ...body,
-    force: document.getElementById("musicForce").checked,
-    now_play: document.getElementById("musicNowPlay").checked,
-  });
-  if (result && result.error) {
+  let result = null;
+  try {
+    result = await post(path, {
+      ...body,
+      force: document.getElementById("musicForce").checked,
+      now_play: document.getElementById("musicNowPlay").checked,
+    });
+  } catch (e) {
+    result = null;
+  }
+  if (result === null) {
+    await showError("A szerver nem érhető el.");
+    return;
+  }
+  if (result.error) {
     await showError(result.error);
     return;
   }
@@ -1884,9 +2017,55 @@ document.getElementById("musicFileInput").addEventListener("change", async (e) =
 document.getElementById("btnMusicRefresh").addEventListener("click", loadMusicList);
 document.getElementById("btnMusicRetry").addEventListener("click", loadMusicList);
 
+// Tekeres: csuszka (huzas, billentyu) es +-10 mp gombok
+const seekSlider = document.getElementById("musicSeek");
+seekSlider.addEventListener("pointerdown", () => { seekDragging = true; });
+const endSeekDrag = () => { seekDragging = false; };
+window.addEventListener("pointerup", endSeekDrag);     // az ablakon, hogy a csuszkan kivul engedve is veget erjen
+window.addEventListener("pointercancel", endSeekDrag);
+
+// huzas kozben csak a felirat frissul; a kerest a change inditja (elengedeskor vagy billentyure)
+seekSlider.addEventListener("input", () => {
+  const duration = musicProgressState ? musicProgressState.duration_s : null;
+  if (!hasDuration(duration)) return;
+  const pos = Number(seekSlider.value) / 1000 * duration;
+  document.getElementById("musicTime").textContent = formatTime(pos) + " / " + formatTime(duration);
+});
+
+seekSlider.addEventListener("change", () => {
+  seekDragging = false;
+  const st = musicProgressState;
+  if (!st || !hasDuration(st.duration_s)) {
+    loadMusicStatus();
+    return;
+  }
+  const target = Number(seekSlider.value) / 1000 * st.duration_s;
+  musicProgressState = { ...st, position_s: target, at: nowMs() }; // hogy a kijelzo ne ugorjon vissza a valasz elott
+  seekMusic({ position_s: target });
+});
+
+document.getElementById("btnSeekBack").addEventListener("click", () => seekMusic({ delta_s: -10 }));
+document.getElementById("btnSeekFwd").addEventListener("click", () => seekMusic({ delta_s: 10 }));
+
+document.getElementById("btnMusicLoop").addEventListener("click", async () => {
+  let result = null;
+  try {
+    result = await post("/api/music/loop", { mode: MUSIC_LOOP_NEXT[currentLoopMode] });
+  } catch (e) {
+    result = null;
+  }
+  if (result && result.ok) {
+    loadMusicStatus();
+    return;
+  }
+  await showError((result && result.error) || "A szerver nem érhető el.");
+});
+
 setInterval(() => {
   if (isPageActive("library")) loadMusicStatus();
-}, 2000);
+}, 1000);
+
+setInterval(tickMusicProgress, 250);
 
 setInterval(refreshStorage, 30000);
 
