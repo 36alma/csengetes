@@ -172,6 +172,42 @@ def test_delete_removes_file(env):
     assert not (env.music_dir / "torlendo.mp3").exists()
 
 
+def test_delete_os_error_is_409_and_keeps_file_and_playlists(env, monkeypatch):
+    env.music_dir.mkdir(parents=True)
+    (env.music_dir / "nyitva.mp3").write_bytes(b"x")
+    playlist = env.ctx.playlists.create("Lista")
+    env.ctx.playlists.add_tracks(playlist["id"], ["nyitva.mp3"])
+
+    def locked(path):
+        raise PermissionError("masik folyamat hasznalja")
+
+    monkeypatch.setattr(api_music.os, "remove", locked)
+
+    resp = env.client.delete("/api/music/nyitva.mp3")
+
+    assert resp.status_code == 409
+    assert resp.json() == {"error": "A fajl nem torolheto (hasznalatban lehet)."}
+    assert (env.music_dir / "nyitva.mp3").exists()
+    assert env.ctx.playlists.get(playlist["id"])["tracks"] == ["nyitva.mp3"]
+
+
+@pytest.mark.parametrize("exc", [OSError("lemez hiba"), ValueError("serult adat")])
+def test_delete_playlist_cascade_failure_is_500_json(env, monkeypatch, exc):
+    env.music_dir.mkdir(parents=True)
+    (env.music_dir / "torolt.mp3").write_bytes(b"x")
+
+    def broken(name):
+        raise exc
+
+    monkeypatch.setattr(env.ctx.playlists, "remove_track_everywhere", broken)
+
+    resp = env.client.delete("/api/music/torolt.mp3")
+
+    assert resp.status_code == 500
+    assert resp.json() == {"error": "A fajl torolve, de a playlistek frissitese nem sikerult."}
+    assert not (env.music_dir / "torolt.mp3").exists()
+
+
 def test_non_music_extensions_are_not_listed_or_addressable(env):
     env.music_dir.mkdir(parents=True)
     (env.music_dir / "letoltes.part").write_bytes(b"felkesz")

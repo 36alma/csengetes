@@ -90,14 +90,18 @@ class MusicService:
     @property
     def next_track(self) -> str | None:
         """A kovetkezo szam utvonala, None ha a sor vegen nincs tovabb."""
-        if self.index is None or not self.filename:
+        # a lejatszo szal kozben irja az indexet: egyszer olvasunk, a pillanatkepbol szamolunk
+        idx = self.index
+        files = self.filename
+        mode = self.loop_mode
+        if idx is None or idx >= len(files):
             return None
-        if self.loop_mode == "track":
-            return self.filename[self.index]
-        if self.index + 1 < len(self.filename):
-            return self.filename[self.index + 1]
-        if self.loop_mode == "playlist":
-            return self.filename[0]
+        if mode == "track":
+            return files[idx]
+        if idx + 1 < len(files):
+            return files[idx + 1]
+        if mode == "playlist":
+            return files[0]
         return None
 
     def run(self) -> None:

@@ -15,13 +15,13 @@ from fakes import FakeMic, wait_until
 from api import mixer as api_mixer
 from model import AudioPacket
 from services.mixer import Mixer, MixerPlayer, PlayGate
-from services.music import MusicSession
+from services.music import MusicSession, download
 from services.mixer.mixing import SAMPLE_RATE
 
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    monkeypatch.setattr(api_mixer, "MUSIC_DIR", str(tmp_path))
+    monkeypatch.setattr(download, "DOWNLOAD_DIR", str(tmp_path))
     monkeypatch.setattr(api_mixer.config, "BELL_VOLUME_PERCENT", 100.0)
     mixer = Mixer(mic=FakeMic())
     mixer.start()
@@ -121,6 +121,26 @@ def test_music_path_protection_and_playback(env):
     assert wait_until(lambda: "PLAYING_MUSIC" in env.client.get("/api/mixer").json()["flags"])
     assert env.client.delete("/api/mixer/music").status_code == 200
     assert wait_until(lambda: not env.mixer.file_playing)
+
+
+def test_mixer_music_accepts_only_music_files_from_the_music_dir(env):
+    (env.music_dir / "jegyzet.txt").write_bytes(b"szoveg")
+    (env.music_dir / "felkesz.part").write_bytes(b"x")
+
+    for name in ("jegyzet.txt", "felkesz.part", "..\server.py", "%2e%2e/server.py"):
+        assert env.client.post("/api/mixer/music", json={"name": name}).status_code == 404, name
+    assert env.session.current is None
+
+
+def test_mixer_music_dir_is_read_at_call_time(env, tmp_path, monkeypatch):
+    other = tmp_path / "masik"
+    other.mkdir()
+    sf.write(other / "uj.wav", 0.2 * np.sin(np.linspace(0, 100, SAMPLE_RATE // 5)), SAMPLE_RATE)
+    assert env.client.post("/api/mixer/music", json={"name": "uj.wav"}).status_code == 404
+
+    monkeypatch.setattr(download, "DOWNLOAD_DIR", str(other))
+
+    assert env.client.post("/api/mixer/music", json={"name": "uj.wav"}).status_code == 200
 
 
 def test_mixer_tab_play_does_not_inherit_the_session_loop_mode(env):

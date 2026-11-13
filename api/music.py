@@ -212,9 +212,18 @@ def create_router(ctx: ApiContext) -> APIRouter:
         svc = session.current
         if svc is not None and svc.status == "playing" and path in [os.path.realpath(f) for f in svc.filename]:
             return error("A fajl jelenleg lejatszas alatt all.", 409)
-        os.remove(path)
         name = os.path.basename(path)
-        ctx.playlists.remove_track_everywhere(name)
+        try:
+            os.remove(path)
+        except OSError as exc:
+            # pl. Windows: a fajlt mashol megnyitottak (PermissionError); a fajl es a playlistek erintetlenek
+            logger.error("A zene nem torolheto (%s): %s", name, exc)
+            return error("A fajl nem torolheto (hasznalatban lehet).", 409)
+        try:
+            ctx.playlists.remove_track_everywhere(name)
+        except (OSError, ValueError) as exc:
+            logger.error("A playlistek frissitese a torles utan sikertelen (%s): %s", name, exc)
+            return error("A fajl torolve, de a playlistek frissitese nem sikerult.", 500)
         logger.info("Zene torolve: %s", name)
         return {"ok": True}
 

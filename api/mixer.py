@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from typing import Callable
 from urllib.parse import urlparse
 
@@ -12,15 +11,14 @@ from fastapi import APIRouter, Body, WebSocket
 
 from config_store import config
 from model import MixerStatus
-from services.music import MusicService, download as music_download
+from services.music import MusicService
 from services.mixer.main import BITRATE_KBPS
 from services.mixer.mixing import BLOCK_SIZE, SAMPLE_RATE
 
 from .context import ApiContext, error
+from .music import music_path
 
 logger = logging.getLogger("csengetes")
-
-MUSIC_DIR = music_download.DOWNLOAD_DIR
 
 # (kulcs, a Mixer metodusa) - a hangerok kozos kezelese
 _VOLUMES = (
@@ -37,16 +35,6 @@ STREAM_INFO = {
     "bitrate_kbps": BITRATE_KBPS,
     "frame_samples": BLOCK_SIZE,
 }
-
-
-def _music_path(filename: str) -> str | None:
-    """A download/ mappan beluli, letezo fajl utvonala, kulonben None."""
-    safe = os.path.basename(str(filename or "").strip())
-    root = os.path.realpath(MUSIC_DIR)
-    path = os.path.realpath(os.path.join(root, safe))
-    if not safe or not path.startswith(root + os.sep) or not os.path.isfile(path):
-        return None
-    return path
 
 
 def _same_origin(ws: WebSocket) -> bool:
@@ -189,7 +177,7 @@ def create_router(ctx: ApiContext) -> APIRouter:
 
     @router.post("/api/mixer/music")
     def start_music(body: dict = Body(...)):
-        path = _music_path(body.get("name"))
+        path = music_path(body.get("name"))
         if path is None:
             return error("A zene nem talalhato.", 404)
         # ugyanaz a zenei allapot, mint a zene fulon: ott is latszik, hogy mi szol; de ezen a fulon

@@ -556,3 +556,66 @@ def test_session_start_without_inheriting_the_loop_mode():
     assert player.played == ["a.mp3"]
     assert player.loop_at_play == [False]
     assert session.loop_mode == "playlist"  # a munkamenet beallitasa megmarad
+
+
+# ---------- M3: a lejatszo szal kozben irja az indexet / a szamot: egyszeri olvasas ----------
+
+
+class _FlippingIndex(MusicService):
+    """Az index az elso olvasasra 0, utana None (mintha kozben leallt volna a lejatszas)."""
+
+    reads = 0
+
+    @property
+    def index(self):
+        self.reads += 1
+        return 0 if self.reads == 1 else None
+
+    @index.setter
+    def index(self, value):
+        pass
+
+
+class _FlippingCurrent(MusicService):
+    """A current az elso olvasasra egy fajl, utana None."""
+
+    reads = 0
+
+    @property
+    def current(self):
+        self.reads += 1
+        return "/m/a.mp3" if self.reads == 1 else None
+
+    @current.setter
+    def current(self, value):
+        pass
+
+
+@pytest.mark.parametrize("mode", ["off", "track", "playlist"])
+def test_next_track_reads_the_index_once(mode):
+    svc = _FlippingIndex([], FakePlayer(), None, force=True, files=["/m/a.mp3", "/m/b.mp3"])
+    svc.loop_mode = mode
+
+    nxt = svc.next_track  # a regi kod masodik olvasaskor None + 1-et szamolt: TypeError
+
+    assert nxt == {"off": "/m/b.mp3", "track": "/m/a.mp3", "playlist": "/m/b.mp3"}[mode]
+    assert svc.reads == 1
+
+
+def test_next_track_with_an_index_past_the_queue_is_none():
+    svc = _svc(["/m/a.mp3"])
+    svc.index = 5
+
+    assert svc.next_track is None
+
+
+def test_session_status_reads_current_once():
+    svc = _FlippingCurrent([], FakePlayer(), None, force=True, files=["/m/a.mp3", "/m/b.mp3"])
+    svc.status = "playing"
+    session = MusicSession()
+    session._current = svc
+
+    status = session.status()  # a regi kod basename(None)-t hivott: TypeError -> 500
+
+    assert status["current"] == "a.mp3"
+    assert svc.reads == 1

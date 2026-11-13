@@ -67,19 +67,21 @@ class MusicSession:
                 "current": None, "next": None, "loop": self.loop_mode,
                 "position_s": None, "duration_s": None, "progress": None, "error": None,
             }
+        # a lejatszo szal kozben irja ezeket a mezoket: egyszer olvasunk, a pillanatkepbol szamolunk
+        state, idx, cur = svc.status, svc.index, svc.current
         names = [os.path.basename(f) for f in svc.filename]
         position_s = duration_s = None
-        if svc.status == "playing":
+        if state == "playing":
             pos = svc.player.position()
             if pos is not None:
                 position_s, duration_s = pos
         nxt = svc.next_track
         return {
-            "status": svc.status,
+            "status": state,
             "files": names,
             "queue": names,
-            "index": svc.index,
-            "current": os.path.basename(svc.current) if svc.current else None,
+            "index": idx,
+            "current": os.path.basename(cur) if cur else None,
             "next": os.path.basename(nxt) if nxt else None,
             "loop": svc.loop_mode,
             "position_s": position_s,
