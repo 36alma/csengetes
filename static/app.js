@@ -2235,7 +2235,7 @@ async function confirmAndDeleteTracks(names) {
   // elobb frissul a lista es a tarhely, csak utana jon a hibaablak (hogy ne maradjon elavult a lista)
   await loadMusicList();
   await refreshStorage();
-  if (typeof loadPlaylists === "function") loadPlaylists();
+  loadPlaylists();
   if (failed.length) await showError(`${failed.length}/${names.length} törlése nem sikerült:\n` + failed.join("\n"));
 }
 
@@ -2318,10 +2318,12 @@ document.getElementById("musicFileInput").addEventListener("change", async (e) =
   } finally {
     setButtonBusy(btn, false);
   }
-  // a hibauzenetek a feltoltesek utan, egymas utan jonnek (nem allitjak meg a tobbi fajlt)
-  for (const message of failed) await showError(message);
+  // elobb frissul a lista es a tarhely, csak utana jon egyetlen hibaablak (mint a torlesnel):
+  // a hibauzenetek nem allitjak meg a tobbi fajlt, es a lista nem marad elavult az ablak mogott
   await loadMusicList();
-  refreshStorage();
+  await refreshStorage();
+  if (failed.length === 1) await showError(failed[0]);
+  else if (failed.length > 1) await showError(`${failed.length}/${files.length} feltöltése nem sikerült:\n` + failed.join("\n"));
 });
 
 document.getElementById("btnMusicRefresh").addEventListener("click", loadMusicList);
