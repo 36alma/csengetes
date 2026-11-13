@@ -67,6 +67,16 @@ def test_check_limits_too_long_names_title_and_limit(fake, monkeypatch):
         MusicDownload([URL]).check_limits()
     assert "Hosszu" in str(exc.value)
     assert "15" in str(exc.value)
+    # a video hossza m:ss, a maximum a beallitott percek
+    assert str(exc.value) == "A(z) 'Hosszu' tul hosszu (15:01), a megengedett maximum 15 perc."
+
+
+def test_check_limits_too_long_formats_minutes_and_seconds(fake, monkeypatch):
+    monkeypatch.setenv("CSENGETES_MAX_YT_MINUTES", "120")
+    use(monkeypatch, {"title": "Maraton", "duration": 7325.7})
+    with pytest.raises(MusicDownloadError) as exc:
+        MusicDownload([URL]).check_limits()
+    assert str(exc.value) == "A(z) 'Maraton' tul hosszu (122:05), a megengedett maximum 120 perc."
 
 
 def test_check_limits_live_stream_rejected(fake, monkeypatch):

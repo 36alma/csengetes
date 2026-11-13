@@ -81,8 +81,9 @@ class MusicDownload:
                             raise MusicDownloadError(f"A(z) '{title}' hossza ismeretlen, nem toltheto le.")
                         duration_s = float(duration)
                         if duration_s > max_s:
+                            minutes, seconds = divmod(int(duration_s), 60)  # m:ss, hogy a 15:01 ne tunjon a 15 perces hatarral egyenlonek
                             raise MusicDownloadError(
-                                f"A(z) '{title}' tul hosszu ({duration_s / 60:.1f} perc), "
+                                f"A(z) '{title}' tul hosszu ({minutes}:{seconds:02d}), "
                                 f"a megengedett maximum {max_s / 60:g} perc."
                             )
                         items.append(
